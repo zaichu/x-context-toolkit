@@ -1,69 +1,112 @@
-# React + TypeScript + Vite
+# X Context Toolkit
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+X(Twitter)でテキストを選択して右クリックメニューからミュートキーワードに追加するChrome拡張機能です。
 
-Currently, two official plugins are available:
+## 機能
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+### 🎯 主要機能
+- **右クリックメニュー**: X上でテキストを選択して右クリックでミュートキーワード追加
+- **ポップアップUI**: 拡張機能アイコンから手動でキーワード追加
+- **自動タブ切り替え**: ミュートキーワード設定ページを自動で開いて入力
+- **DOM操作**: Xの公式ミュートキーワード設定に直接追加
 
-## Expanding the ESLint configuration
+### ✨ 特徴
+- **公式機能と連携**: Xの標準ミュート機能を使用
+- **シンプルなUI**: Bootstrap 5を使用したモダンなデザイン
+- **リアルタイム処理**: バックグラウンドで自動処理
+- **通知機能**: 処理結果をわかりやすく通知
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+## インストール
 
-```js
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      ...tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      ...tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      ...tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### 1. リポジトリをクローン
+```bash
+git clone https://github.com/your-username/x-context-toolkit.git
+cd x-context-toolkit
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
-
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default tseslint.config([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+### 2. 依存関係をインストール
+```bash
+npm install
 ```
+
+### 3. ビルド
+```bash
+npm run build
+```
+
+### 4. Chrome拡張機能として読み込み
+1. Chrome で `chrome://extensions/` を開く
+2. 「デベロッパーモード」を有効にする
+3. 「パッケージ化されていない拡張機能を読み込む」をクリック
+4. `dist` フォルダを選択
+
+## 使い方
+
+### 方法1: 右クリックメニュー
+1. X(Twitter)でミュートしたいテキストを選択
+2. 右クリックして「X ミュートキーワードに追加」を選択
+3. 自動でミュートキーワード設定ページが開き、入力される
+
+### 方法2: ポップアップ
+1. 拡張機能アイコンをクリック
+2. キーワードを入力して「追加」ボタンをクリック
+3. 自動でミュートキーワード設定ページが開き、入力される
+
+## 技術仕様
+
+### 開発環境
+- **Node.js** + **npm**
+- **React 19** + **TypeScript**
+- **Bootstrap 5** (UI フレームワーク)
+- **Vite** + **CRX.js** (ビルドツール)
+
+### プロジェクト構成
+```
+src/
+├── background/         # バックグラウンドサービス
+├── content/           # コンテンツスクリプト
+├── popup/             # ポップアップUI
+└── utils/             # ユーティリティ関数
+```
+
+### コマンド
+```bash
+# 開発サーバー起動
+npm run dev
+
+# ビルド
+npm run build
+
+# リント
+npm run lint
+```
+
+## セキュリティ
+
+この拡張機能は**防御的な用途**のみを目的としています：
+- X(Twitter)の公式ミュート機能を使用
+- 悪意のあるコードは含まれていません
+- ユーザーデータを外部に送信しません
+
+## 対応ブラウザ
+
+- Google Chrome (Manifest V3対応)
+- Microsoft Edge
+- その他Chromiumベースブラウザ
+
+## 対応サイト
+
+- `https://x.com/*`
+- `https://twitter.com/*`
+
+## ライセンス
+
+MIT License
+
+## 貢献
+
+バグ報告や機能提案は [Issues](https://github.com/your-username/x-context-toolkit/issues) でお願いします。
+
+## 開発者
+
+開発時の注意事項については [.claude/CLAUDE.md](.claude/CLAUDE.md) を参照してください。
