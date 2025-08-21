@@ -11,25 +11,25 @@ const Popup: React.FC = () => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     const trimmedKeyword = keyword.trim()
     if (!trimmedKeyword) {
       return
     }
-    
+
     setIsSubmitting(true)
     setMessage('')
-    
+
     try {
       await addMuteKeyword(trimmedKeyword)
       setMessage(`「${trimmedKeyword}」をXのミュートキーワードに追加中...`)
       setKeyword('')
-      
+
       // 数秒後にポップアップを閉じる
       setTimeout(() => {
         window.close()
       }, 2000)
-      
+
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'キーワードの追加に失敗しました'
       setMessage(errorMessage)
@@ -46,8 +46,7 @@ const Popup: React.FC = () => {
           <i className="bi bi-shield-check text-primary" style={{ fontSize: '1.5rem' }}></i>
         </div>
         <div>
-          <h4 className="mb-0">X Context Toolkit</h4>
-          <small className="text-muted">ミュートキーワード追加</small>
+          <h4 className="mb-0">Xにミュートキーワードを追加</h4>
         </div>
       </div>
 
