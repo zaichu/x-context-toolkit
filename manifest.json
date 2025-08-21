@@ -2,27 +2,33 @@
   "manifest_version": 3,
   "name": "X Context Toolkit",
   "version": "1.0.0",
-  "description": "Chrome拡張機能ツールキット",
+  "description": "文字を選択後、右クリックメニューからXのミュートキーワードに追加するChrome拡張機能",
   "permissions": [
     "activeTab",
-    "storage"
+    "storage",
+    "contextMenus"
+  ],
+  "host_permissions": [
+    "https://twitter.com/*",
+    "https://x.com/*"
   ],
   "action": {
-    "default_popup": "popup.html",
+    "default_popup": "src/popup/index.html",
     "default_title": "X Context Toolkit"
   },
   "content_scripts": [
     {
-      "matches": ["<all_urls>"],
-      "js": ["content.js"]
+      "matches": ["https://twitter.com/*", "https://x.com/*"],
+      "js": ["src/content/index.tsx"]
     }
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "src/background/index.ts",
+    "type": "module"
   },
   "icons": {
-    "16": "public/icon16.png",
-    "48": "public/icon48.png",
-    "128": "public/icon128.png"
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
   }
 }
