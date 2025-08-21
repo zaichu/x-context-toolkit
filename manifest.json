@@ -1,0 +1,28 @@
+{
+  "manifest_version": 3,
+  "name": "X Context Toolkit",
+  "version": "1.0.0",
+  "description": "Chrome拡張機能ツールキット",
+  "permissions": [
+    "activeTab",
+    "storage"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "X Context Toolkit"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"]
+    }
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "icons": {
+    "16": "public/icon16.png",
+    "48": "public/icon48.png",
+    "128": "public/icon128.png"
+  }
+}
