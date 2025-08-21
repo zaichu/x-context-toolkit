@@ -1,151 +1,45 @@
-// コンテンツスクリプト - X(Twitter)ページに注入される
-import React from 'react'
-import { createRoot } from 'react-dom/client'
-import { getMuteKeywords } from '../utils/storage'
-import { getTweetElements, containsMuteKeyword, hideTweet, showTweet, isTwitterPage } from '../utils/dom'
-import { MuteKeyword } from '../types'
+// コンテンツスクリプト - ミュートキーワード設定ページ用
+import { isMuteKeywordPage, fillMuteKeywordForm } from '../utils/xMuteKeywords'
 
 console.log('X Context Toolkit コンテンツスクリプトが読み込まれました')
 
-// ミュートキーワードをキャッシュ
-let muteKeywords: string[] = []
-let isInitialized = false
-
-// 初期化
-const initialize = async () => {
-  if (!isTwitterPage()) {
-    console.log('X(Twitter)以外のページなので処理をスキップします')
-    return
+// ページの初期化
+const initialize = () => {
+  if (isMuteKeywordPage()) {
+    console.log('Xのミュートキーワード設定ページを検出しました')
   }
-  
-  try {
-    // ミュートキーワードを読み込み
-    const keywords = await getMuteKeywords()
-    muteKeywords = keywords.filter(k => k.isActive).map(k => k.keyword)
-    
-    console.log(`${muteKeywords.length}個のアクティブなミュートキーワードを読み込みました:`, muteKeywords)
-    
-    // 初回チェック
-    checkAndHideTweets()
-    
-    // DOM変更を監視してリアルタイムでチェック
-    startMutationObserver()
-    
-    // スクロールイベントでも定期チェック（パフォーマンス考慮）
-    let scrollTimeout: NodeJS.Timeout
-    window.addEventListener('scroll', () => {
-      clearTimeout(scrollTimeout)
-      scrollTimeout = setTimeout(checkAndHideTweets, 500)
-    })
-    
-    isInitialized = true
-    console.log('X Context Toolkit の初期化が完了しました')
-    
-  } catch (error) {
-    console.error('初期化エラー:', error)
-  }
-}
-
-// ツイートをチェックして該当するものを非表示にする
-const checkAndHideTweets = () => {
-  if (muteKeywords.length === 0) return
-  
-  const tweets = getTweetElements()
-  let hiddenCount = 0
-  
-  tweets.forEach(({ tweet, text }) => {
-    // 既にミュート済みかチェック
-    if (tweet.getAttribute('data-muted') === 'true') return
-    
-    // ミュートキーワードをチェック
-    if (containsMuteKeyword(text, muteKeywords)) {
-      hideTweet(tweet)
-      hiddenCount++
-    }
-  })
-  
-  if (hiddenCount > 0) {
-    console.log(`${hiddenCount}件のツイートを非表示にしました`)
-  }
-}
-
-// DOM変更を監視
-const startMutationObserver = () => {
-  const observer = new MutationObserver((mutations) => {
-    let shouldCheck = false
-    
-    mutations.forEach((mutation) => {
-      // 新しいノードが追加された場合のみチェック
-      if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-        for (const node of mutation.addedNodes) {
-          if (node.nodeType === Node.ELEMENT_NODE) {
-            const element = node as Element
-            // ツイート関連の要素が追加された場合
-            if (element.matches('[data-testid="tweet"]') || 
-                element.querySelector('[data-testid="tweet"]')) {
-              shouldCheck = true
-              break
-            }
-          }
-        }
-      }
-    })
-    
-    if (shouldCheck) {
-      // パフォーマンス考慮で少し遅延
-      setTimeout(checkAndHideTweets, 100)
-    }
-  })
-  
-  observer.observe(document.body, {
-    childList: true,
-    subtree: true
-  })
 }
 
 // バックグラウンドスクリプトからのメッセージを受信
 chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
   console.log('コンテンツスクリプトでメッセージを受信:', request)
   
-  if (request.action === 'pageLoaded') {
-    if (!isInitialized) {
-      await initialize()
-    }
-    sendResponse({ status: 'initialized' })
-  }
-  
-  if (request.action === 'muteKeywordAdded') {
-    // 新しいキーワードが追加された時の処理
-    const keywords = await getMuteKeywords()
-    muteKeywords = keywords.filter(k => k.isActive).map(k => k.keyword)
-    
-    // 即座にチェック
-    checkAndHideTweets()
-    
-    sendResponse({ status: 'updated' })
-  }
-  
-  return true
-})
-
-// ストレージの変更を監視
-chrome.storage.onChanged.addListener(async (changes) => {
-  if (changes.muteKeywords) {
-    console.log('ミュートキーワードが更新されました')
-    const keywords: MuteKeyword[] = changes.muteKeywords.newValue || []
-    muteKeywords = keywords.filter(k => k.isActive).map(k => k.keyword)
-    
-    // すべてのツイートを再表示してから再チェック
-    const tweets = getTweetElements()
-    tweets.forEach(({ tweet }) => {
-      if (tweet.getAttribute('data-muted') === 'true') {
-        showTweet(tweet)
+  if (request.action === 'fillMuteKeyword' && request.keyword) {
+    try {
+      if (!isMuteKeywordPage()) {
+        sendResponse({ success: false, error: 'ミュートキーワード設定ページではありません' })
+        return
       }
-    })
-    
-    // 少し遅延してから再チェック
-    setTimeout(checkAndHideTweets, 100)
+      
+      // フォームにキーワードを入力
+      const success = await fillMuteKeywordForm(request.keyword)
+      
+      if (success) {
+        console.log(`ミュートキーワード「${request.keyword}」を入力しました`)
+        sendResponse({ success: true })
+      } else {
+        sendResponse({ success: false, error: 'フォームの入力に失敗しました' })
+      }
+      
+    } catch (error) {
+      console.error('ミュートキーワード入力エラー:', error)
+      sendResponse({ success: false, error: error instanceof Error ? error.message : '不明なエラー' })
+    }
+    return true // 非同期レスポンスを有効にする
   }
+  
+  sendResponse({ success: false, error: '不明なアクション' })
+  return true
 })
 
 // ページ読み込み完了時の初期化
@@ -155,44 +49,55 @@ if (document.readyState === 'loading') {
   initialize()
 }
 
-// 通知コンポーネント（必要に応じて使用）
-const showToast = (message: string, type: 'success' | 'error' | 'info' = 'info') => {
-  const toastId = 'x-context-toolkit-toast-' + Date.now()
-  const toastHtml = `
-    <div id="${toastId}" class="toast align-items-center text-white bg-${type === 'error' ? 'danger' : type === 'success' ? 'success' : 'primary'} border-0" role="alert" aria-live="assertive" aria-atomic="true" style="position: fixed; top: 20px; right: 20px; z-index: 9999;">
-      <div class="d-flex">
-        <div class="toast-body">
-          ${message}
-        </div>
-        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast" aria-label="Close"></button>
-      </div>
+// 成功通知を表示する関数
+const showSuccessMessage = (keyword: string) => {
+  const messageDiv = document.createElement('div')
+  messageDiv.style.cssText = `
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    background: #1d9bf0;
+    color: white;
+    padding: 16px 20px;
+    border-radius: 8px;
+    z-index: 10000;
+    font-family: TwitterChirp, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 15px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.12);
+    animation: slideIn 0.3s ease-out;
+  `
+  
+  messageDiv.innerHTML = `
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 15l-5-5 1.41-1.41L10 14.17l7.59-7.59L19 8l-9 9z"/>
+      </svg>
+      <span>「${keyword}」をミュートキーワードに追加しました</span>
     </div>
   `
   
-  document.body.insertAdjacentHTML('beforeend', toastHtml)
+  // アニメーションCSS
+  const style = document.createElement('style')
+  style.textContent = `
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+  `
+  document.head.appendChild(style)
   
-  const toastElement = document.getElementById(toastId)
-  if (toastElement) {
-    // Bootstrap のトーストを初期化（CDN読み込み後）
+  document.body.appendChild(messageDiv)
+  
+  // 3秒後に削除
+  setTimeout(() => {
+    messageDiv.style.animation = 'slideOut 0.3s ease-in'
     setTimeout(() => {
-      // @ts-ignore
-      if (typeof bootstrap !== 'undefined') {
-        // @ts-ignore
-        const toast = new bootstrap.Toast(toastElement)
-        toast.show()
-        
-        // 自動削除
-        setTimeout(() => {
-          toastElement.remove()
-        }, 5000)
-      } else {
-        // Bootstrap が読み込まれていない場合は手動で削除
-        setTimeout(() => {
-          toastElement.remove()
-        }, 3000)
+      if (messageDiv.parentNode) {
+        messageDiv.parentNode.removeChild(messageDiv)
+        style.remove()
       }
-    }, 100)
-  }
+    }, 300)
+  }, 3000)
 }
 
 // エクスポート（TypeScriptでの型チェック用）
