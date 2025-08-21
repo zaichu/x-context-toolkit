@@ -6,18 +6,18 @@ interface AddKeywordFormProps {
   loading?: boolean
 }
 
-export const AddKeywordForm: React.FC<AddKeywordFormProps> = ({ onAdd, loading = false }) => {
+export const AddKeywordForm: React.FC<AddKeywordFormProps> = ({ onAdd }) => {
   const [keyword, setKeyword] = useState('')
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    
+
     const trimmedKeyword = keyword.trim()
     if (!trimmedKeyword) {
       return
     }
-    
+
     setIsSubmitting(true)
     try {
       const success = await onAdd(trimmedKeyword)
@@ -33,7 +33,7 @@ export const AddKeywordForm: React.FC<AddKeywordFormProps> = ({ onAdd, loading =
     setKeyword(e.target.value)
   }
 
-  const isDisabled = loading || isSubmitting || !keyword.trim()
+  const isDisabled = isSubmitting || !keyword.trim()
 
   return (
     <form onSubmit={handleSubmit} className="mb-3">
@@ -44,7 +44,7 @@ export const AddKeywordForm: React.FC<AddKeywordFormProps> = ({ onAdd, loading =
           placeholder="ミュートするキーワードを入力..."
           value={keyword}
           onChange={handleKeywordChange}
-          disabled={loading || isSubmitting}
+          disabled={isSubmitting}
           maxLength={100}
         />
         <button
