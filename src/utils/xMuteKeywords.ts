@@ -9,8 +9,12 @@ export const addMuteKeywordToX = async (keyword: string): Promise<boolean> => {
     // 新しいタブでミュートキーワード追加ページを開く
     const tab = await chrome.tabs.create({
       url: MUTE_KEYWORDS_URL,
-      active: false // バックグラウンドで開く
+      active: true // アクティブタブとして開く
     })
+    
+    // タブをアクティブにして表示
+    await chrome.tabs.update(tab.id!, { active: true })
+    await chrome.windows.update(tab.windowId!, { focused: true })
 
     if (!tab.id) {
       throw new Error('タブの作成に失敗しました')
@@ -28,10 +32,8 @@ export const addMuteKeywordToX = async (keyword: string): Promise<boolean> => {
     if (result?.success) {
       console.log(`ミュートキーワード「${keyword}」を追加しました`)
 
-      // 数秒後にタブを閉じる（ユーザーが確認できるように少し待機）
-      setTimeout(() => {
-        chrome.tabs.remove(tab.id!)
-      }, 2000)
+      // 成功後はタブを閉じない（ユーザーが確認できるように）
+      console.log('ミュートキーワードの追加が完了しました。タブは開いたままにします。')
 
       return true
     } else {

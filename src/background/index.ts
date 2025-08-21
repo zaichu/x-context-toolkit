@@ -43,7 +43,7 @@ chrome.contextMenus.onClicked.addListener(async (info, tab) => {
       await addMuteKeyword(keyword)
 
       // 成功通知
-      await showNotification(`「${keyword}」をXのミュートキーワードに追加中...`, 'success')
+      await showNotification(`「${keyword}」をXのミュートキーワード設定ページに入力中...`, 'success')
 
     } catch (error) {
       console.error('ミュートキーワード追加エラー:', error)
