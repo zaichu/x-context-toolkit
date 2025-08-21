@@ -105,7 +105,7 @@ MIT License
 
 ## 貢献
 
-バグ報告や機能提案は [Issues](https://github.com/your-username/x-context-toolkit/issues) でお願いします。
+バグ報告や機能提案は [Issues](https://github.com/zaichu/x-context-toolkit/issues) でお願いします。
 
 ## 開発者
 
