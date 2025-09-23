@@ -1,7 +1,8 @@
 // X(Twitter)のミュートキーワード機能用DOM操作ユーティリティ
 
 // ミュートキーワード設定ページのURL
-export const MUTE_KEYWORDS_URL = 'https://x.com/settings/add_muted_keyword'
+export const ADD_MUTE_KEYWORDS_URL = 'https://x.com/settings/add_muted_keyword'
+export const MUTE_KEYWORDS_URL = 'https://x.com/settings/muted_keywords'
 
 // ミュートキーワードを追加する関数
 export const addMuteKeywordToX = async (keyword: string): Promise<boolean> => {
@@ -13,8 +14,6 @@ export const addMuteKeywordToX = async (keyword: string): Promise<boolean> => {
       throw new Error('タブの作成に失敗しました')
     }
 
-    // タブをアクティブにして表示
-    await chrome.tabs.update(tab.id!, { active: true })
     await chrome.windows.update(tab.windowId!, { focused: true })
 
     // ページが読み込まれるまで待機
@@ -40,19 +39,20 @@ export const addMuteKeywordToX = async (keyword: string): Promise<boolean> => {
   }
 }
 
-const getMuteKeywordTab = (): Promise<chrome.tabs.Tab> => {
-  // chrome.tabs.query({}, tabs => {
-  //   for (let i = 0; i < tabs.length; i++) {
-  //     if (tabs[i].url?.includes(MUTE_KEYWORDS_URL)) {
-  //       console.log('既存のミュートキーワードタブを再利用します')
-  //       return tabs[i]
-  //     }
-  //   }
-  // });
+const getMuteKeywordTab = async (): Promise<chrome.tabs.Tab> => {
+  const tabs = await chrome.tabs.query({})
+  for (const tab of tabs) {
+    if (tab.url?.includes(ADD_MUTE_KEYWORDS_URL) || tab.url?.includes(MUTE_KEYWORDS_URL)) {
+      console.log('既存のミュートキーワードタブを再利用します')
+      await chrome.tabs.update(tab.id!, { url: ADD_MUTE_KEYWORDS_URL, active: true })
+      return tab
+    }
+  }
 
   // 新しいタブでミュートキーワード追加ページを開く
+  console.log('新しいミュートキーワードタブを作成します')
   return chrome.tabs.create({
-    url: MUTE_KEYWORDS_URL,
+    url: ADD_MUTE_KEYWORDS_URL,
     active: true
   })
 }
@@ -91,7 +91,7 @@ const waitForTabLoad = (tabId: number): Promise<void> => {
 
 // 現在のページがミュートキーワード設定ページかチェック
 export const isMuteKeywordPage = (): boolean => {
-  return window.location.href.includes(MUTE_KEYWORDS_URL)
+  return window.location.href.includes(ADD_MUTE_KEYWORDS_URL)
 }
 
 // ミュートキーワード入力フォームのセレクター
