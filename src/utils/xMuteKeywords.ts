@@ -7,18 +7,15 @@ export const MUTE_KEYWORDS_URL = 'https://x.com/settings/add_muted_keyword'
 export const addMuteKeywordToX = async (keyword: string): Promise<boolean> => {
   try {
     // 新しいタブでミュートキーワード追加ページを開く
-    const tab = await chrome.tabs.create({
-      url: MUTE_KEYWORDS_URL,
-      active: true
-    })
-
-    // タブをアクティブにして表示
-    await chrome.tabs.update(tab.id!, { active: true })
-    await chrome.windows.update(tab.windowId!, { focused: true })
+    const tab = await getMuteKeywordTab();
 
     if (!tab.id) {
       throw new Error('タブの作成に失敗しました')
     }
+
+    // タブをアクティブにして表示
+    await chrome.tabs.update(tab.id!, { active: true })
+    await chrome.windows.update(tab.windowId!, { focused: true })
 
     // ページが読み込まれるまで待機
     await waitForTabLoad(tab.id)
@@ -31,10 +28,7 @@ export const addMuteKeywordToX = async (keyword: string): Promise<boolean> => {
 
     if (result?.success) {
       console.log(`ミュートキーワード「${keyword}」を追加しました`)
-
-      // 成功後はタブを閉じない（ユーザーが確認できるように）
       console.log('ミュートキーワードの追加が完了しました。タブは開いたままにします。')
-
       return true
     } else {
       throw new Error('キーワードの入力に失敗しました')
@@ -44,6 +38,23 @@ export const addMuteKeywordToX = async (keyword: string): Promise<boolean> => {
     console.error('ミュートキーワード追加エラー:', error)
     return false
   }
+}
+
+const getMuteKeywordTab = (): Promise<chrome.tabs.Tab> => {
+  // chrome.tabs.query({}, tabs => {
+  //   for (let i = 0; i < tabs.length; i++) {
+  //     if (tabs[i].url?.includes(MUTE_KEYWORDS_URL)) {
+  //       console.log('既存のミュートキーワードタブを再利用します')
+  //       return tabs[i]
+  //     }
+  //   }
+  // });
+
+  // 新しいタブでミュートキーワード追加ページを開く
+  return chrome.tabs.create({
+    url: MUTE_KEYWORDS_URL,
+    active: true
+  })
 }
 
 // タブの読み込み完了を待つ
@@ -80,9 +91,7 @@ const waitForTabLoad = (tabId: number): Promise<void> => {
 
 // 現在のページがミュートキーワード設定ページかチェック
 export const isMuteKeywordPage = (): boolean => {
-  const url = window.location.href
-  return url.includes('/settings/add_muted_keyword') ||
-    url.includes('/settings/muted_keywords')
+  return window.location.href.includes(MUTE_KEYWORDS_URL)
 }
 
 // ミュートキーワード入力フォームのセレクター
