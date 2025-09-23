@@ -9,9 +9,9 @@ export const addMuteKeywordToX = async (keyword: string): Promise<boolean> => {
     // 新しいタブでミュートキーワード追加ページを開く
     const tab = await chrome.tabs.create({
       url: MUTE_KEYWORDS_URL,
-      active: true // アクティブタブとして開く
+      active: true
     })
-    
+
     // タブをアクティブにして表示
     await chrome.tabs.update(tab.id!, { active: true })
     await chrome.windows.update(tab.windowId!, { focused: true })
@@ -48,15 +48,33 @@ export const addMuteKeywordToX = async (keyword: string): Promise<boolean> => {
 
 // タブの読み込み完了を待つ
 const waitForTabLoad = (tabId: number): Promise<void> => {
-  return new Promise((resolve) => {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => {
+      chrome.tabs.onUpdated.removeListener(listener)
+      reject(new Error('タブの読み込みがタイムアウトしました'))
+    }, 30000) // 30秒でタイムアウト
+
     const listener = (changedTabId: number, changeInfo: any) => {
       if (changedTabId === tabId && changeInfo.status === 'complete') {
         chrome.tabs.onUpdated.removeListener(listener)
+        clearTimeout(timeout)
         // DOM読み込み完了まで少し待機
-        setTimeout(resolve, 1000)
+        setTimeout(resolve, 2000) // 待機時間を2秒に延長
       }
     }
-    chrome.tabs.onUpdated.addListener(listener)
+
+    // 既にタブが読み込み済みかチェック
+    chrome.tabs.get(tabId).then((tab) => {
+      if (tab.status === 'complete') {
+        clearTimeout(timeout)
+        setTimeout(resolve, 2000)
+      } else {
+        chrome.tabs.onUpdated.addListener(listener)
+      }
+    }).catch(() => {
+      clearTimeout(timeout)
+      chrome.tabs.onUpdated.addListener(listener)
+    })
   })
 }
 
@@ -125,28 +143,27 @@ export const fillMuteKeywordForm = async (keyword: string): Promise<boolean> => 
 // 要素が読み込まれるまで待機
 const waitForElements = (): Promise<void> => {
   return new Promise((resolve) => {
+    let attempts = 0
+
     const checkInterval = setInterval(() => {
-      if (findKeywordInput() || document.querySelector(SELECTORS.container)) {
+      attempts++
+      const keywordInput = findKeywordInput()
+
+      // より厳密な条件でチェック
+      if (keywordInput && keywordInput.offsetParent && !keywordInput.disabled) {
         clearInterval(checkInterval)
+        console.log(`要素検出成功: ${attempts}回目の試行で発見`)
         resolve()
       }
-    }, 100)
 
-    // 最大10秒で諦める
-    setTimeout(() => {
-      clearInterval(checkInterval)
-      resolve()
-    }, 10000)
+    }, 100)
   })
 }
 
 // キーワード入力フィールドを検索
 const findKeywordInput = (): HTMLInputElement | null => {
   const selectors = [
-    SELECTORS.keywordInput,
-    SELECTORS.keywordInputAlt,
-    'input[type="text"]',
-    'textarea'
+    SELECTORS.keywordInput
   ]
 
   for (const selector of selectors) {
