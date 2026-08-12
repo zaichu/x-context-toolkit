@@ -26,6 +26,14 @@ const buildTweetArticle = (username: string, withCaret = true): HTMLElement => {
   return article
 }
 
+const addGrokAction = (article: HTMLElement): HTMLElement => {
+  const actionGroup = article.querySelector<HTMLElement>('[role="group"]')!
+  const grokAction = document.createElement('div')
+  grokAction.innerHTML = '<button data-testid="grok-action-button" aria-label="Grok actions">Grok</button>'
+  actionGroup.appendChild(grokAction)
+  return grokAction
+}
+
 describe('extractTweetAuthorUsername', () => {
   afterEach(() => {
     document.body.innerHTML = ''
@@ -141,6 +149,16 @@ describe('insertBlockButton / hasBlockButton', () => {
     const actionGroup = article.querySelector('[role="group"]')
 
     expect(button.parentElement).toBe(actionGroup)
+  })
+
+  it('Grokアクションがある場合はその直前（左側）に挿入する', () => {
+    const article = buildTweetArticle('testuser')
+    const grokAction = addGrokAction(article)
+    document.body.appendChild(article)
+
+    const button = insertBlockButton(article)!
+
+    expect(button.nextElementSibling).toBe(grokAction)
   })
 })
 

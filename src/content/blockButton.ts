@@ -228,6 +228,27 @@ const findActionGroup = (article: HTMLElement): HTMLElement | null => {
   return null
 }
 
+// X側の表記揺れに対応してGrokアクションのラッパーを取得する
+const findGrokAction = (article: HTMLElement, actionGroup: HTMLElement): Element | null => {
+  const grokButton = actionGroup.querySelector([
+    '[data-testid="grok-action-button"]',
+    '[data-testid="Grok"]',
+    'button[aria-label^="Grok"]',
+    'button[aria-label*=" Grok"]',
+  ].join(', '))
+
+  if (!grokButton || grokButton.closest('article') !== article) {
+    return null
+  }
+
+  let action: Element = grokButton
+  while (action.parentElement && action.parentElement !== actionGroup) {
+    action = action.parentElement
+  }
+
+  return action.parentElement === actionGroup ? action : null
+}
+
 // articleに既にブロックボタンが挿入済みか判定する
 export const hasBlockButton = (article: HTMLElement): boolean => {
   return article.querySelector(`.${BLOCK_BUTTON_CLASS}`) !== null
@@ -248,7 +269,8 @@ export const insertBlockButton = (article: HTMLElement): HTMLButtonElement | nul
   button.addEventListener('click', (event) => {
     void handleBlockButtonClick(article, button, event)
   })
-  actionGroup.appendChild(button)
+  const grokAction = findGrokAction(article, actionGroup)
+  actionGroup.insertBefore(button, grokAction)
 
   return button
 }
