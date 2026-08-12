@@ -172,14 +172,32 @@ describe('insertBlockButton / hasBlockButton', () => {
     expect(button.parentElement?.nextElementSibling).toBe(grokAction)
   })
 
-  it('投稿ヘッダーのGrok領域がある場合は先頭に挿入する', () => {
+  it('親コンテナ直下は左側グループ（ブロック+Grok）ともっと見る枠の2要素のまま保たれる', () => {
+    const article = buildTweetArticle('testuser')
+    document.body.appendChild(article)
+    const actionArea = article.querySelector('.tweet-header-actions')!
+    const moreSlot = actionArea.children[1]
+
+    const button = insertBlockButton(article)!
+
+    expect(actionArea.children).toHaveLength(2)
+    const leftGroup = actionArea.children[0]
+    expect(leftGroup).not.toBe(button.parentElement)
+    expect(leftGroup.contains(button)).toBe(true)
+    expect(actionArea.children[1]).toBe(moreSlot)
+  })
+
+  it('左側グループの中でブロック枠がGrok枠の直前に並ぶ', () => {
     const article = buildTweetArticle('testuser')
     document.body.appendChild(article)
 
     const button = insertBlockButton(article)!
     const actionArea = article.querySelector('.tweet-header-actions')!
+    const leftGroup = actionArea.children[0]
 
-    expect(actionArea.firstElementChild).toBe(button.parentElement)
+    expect(leftGroup.children).toHaveLength(2)
+    expect(leftGroup.firstElementChild).toBe(button.parentElement)
+    expect(button.parentElement?.nextElementSibling?.querySelector('button')?.getAttribute('aria-label')).toBe('Grokのアクション')
   })
 
   it('Grok領域がまだ生成されていない場合は下部アクション列へフォールバックしない', () => {

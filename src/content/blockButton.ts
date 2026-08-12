@@ -229,18 +229,26 @@ export const insertBlockButton = (article: HTMLElement): HTMLButtonElement | nul
   button.addEventListener('click', (event) => {
     void handleBlockButtonClick(article, button, event)
   })
-  if (grokAction && grokAction.tagName !== 'BUTTON') {
-    const blockAction = grokAction.cloneNode(false) as HTMLElement
+
+  let blockAction: HTMLElement = button
+  if (grokAction.tagName !== 'BUTTON') {
+    blockAction = grokAction.cloneNode(false) as HTMLElement
     blockAction.removeAttribute('id')
     blockAction.removeAttribute('data-testid')
     blockAction.removeAttribute('aria-label')
     blockAction.removeAttribute('title')
     blockAction.removeAttribute('role')
     blockAction.appendChild(button)
-    insertionContainer.insertBefore(blockAction, grokAction)
-  } else {
-    insertionContainer.insertBefore(button, grokAction)
   }
+
+  // Grok枠と同じ親の直下にブロック枠だけを増やすとspace-between等で右側の枠から離れて見えるため、
+  // 左側グループへまとめてGrokの隣に固定し、親直下の要素数（左側グループ／もっと見る枠の2つ）を保つ
+  const leftGroup = document.createElement('div')
+  leftGroup.style.display = 'flex'
+  leftGroup.style.alignItems = 'center'
+  insertionContainer.insertBefore(leftGroup, grokAction)
+  leftGroup.appendChild(blockAction)
+  leftGroup.appendChild(grokAction)
 
   return button
 }
