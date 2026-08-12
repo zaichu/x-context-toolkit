@@ -29,7 +29,8 @@ const buildTweetArticle = (username: string, withCaret = true): HTMLElement => {
 const addGrokAction = (article: HTMLElement): HTMLElement => {
   const actionGroup = article.querySelector<HTMLElement>('[role="group"]')!
   const grokAction = document.createElement('div')
-  grokAction.innerHTML = '<button data-testid="grok-action-button" aria-label="Grok actions">Grok</button>'
+  grokAction.className = 'grok-action-slot'
+  grokAction.innerHTML = '<button aria-label="Grokのアクション">Grok</button>'
   actionGroup.appendChild(grokAction)
   return grokAction
 }
@@ -158,7 +159,8 @@ describe('insertBlockButton / hasBlockButton', () => {
 
     const button = insertBlockButton(article)!
 
-    expect(button.nextElementSibling).toBe(grokAction)
+    expect(button.parentElement?.className).toBe(grokAction.className)
+    expect(button.parentElement?.nextElementSibling).toBe(grokAction)
   })
 })
 
@@ -314,6 +316,39 @@ describe('ブロックボタンのクリック挙動', () => {
     expect(caretClickSpy).toHaveBeenCalledOnce()
     expect(button.disabled).toBe(true)
     expect(sendMessage).not.toHaveBeenCalled()
+  })
+
+  it('確認シートを画面に表示せずに確定ボタンを押す', async () => {
+    const sendMessage = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('chrome', { runtime: { sendMessage } })
+
+    const article = buildTweetArticle('testuser')
+    document.body.appendChild(article)
+    const button = insertBlockButton(article)!
+    let hiddenWhenConfirmed = false
+
+    const caretButton = article.querySelector('[data-testid="caret"]') as HTMLButtonElement
+    caretButton.addEventListener('click', () => {
+      const { menuItem, confirmButton } = appendGlobalMenuAndConfirm('testuser')
+      const layers = document.createElement('div')
+      layers.id = 'layers'
+      const sheet = document.createElement('div')
+      sheet.appendChild(confirmButton)
+      layers.appendChild(sheet)
+      document.body.appendChild(layers)
+
+      menuItem.addEventListener('click', () => {
+        confirmButton.addEventListener('click', () => {
+          hiddenWhenConfirmed = document.getElementById('x-context-toolkit-hide-block-sheet') !== null
+        }, { once: true })
+      }, { once: true })
+    })
+
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+
+    await vi.waitFor(() => expect(button.textContent).toBe('✅'))
+    expect(hiddenWhenConfirmed).toBe(true)
+    expect(document.getElementById('x-context-toolkit-hide-block-sheet')).toBeNull()
   })
 
   it('別ユーザー向けのメニュー項目は操作しない', async () => {

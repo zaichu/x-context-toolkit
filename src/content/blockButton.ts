@@ -4,6 +4,7 @@ import { extractUsernameFromProfileUrl, findBlockMenuItem, findBlockConfirmButto
 
 const TWEET_SELECTOR = 'article[data-testid="tweet"]'
 const BLOCK_BUTTON_CLASS = 'block-button'
+const HIDE_BLOCK_SHEET_STYLE_ID = 'x-context-toolkit-hide-block-sheet'
 
 // 投稿者を特定するために優先的に確認するプロフィールリンクのセレクター
 const AUTHOR_LINK_SELECTORS = [
@@ -106,27 +107,45 @@ const waitForConfirmDialogToClose = (timeoutMs = 5000, intervalMs = 100): Promis
   })
 }
 
+// Xの確認シートをユーザーに表示せず、DOM操作だけで確定する
+const hideBlockConfirmationSheet = (): (() => void) => {
+  const style = document.createElement('style')
+  style.id = HIDE_BLOCK_SHEET_STYLE_ID
+  style.textContent = `
+    #layers > div:has([data-testid="confirmationSheetConfirm"]) {
+      visibility: hidden !important;
+    }
+  `
+  document.head.appendChild(style)
+  return () => style.remove()
+}
+
 // このポストの投稿者をX公式DOM経由でブロックする（別タブ・別ウィンドウは開かない）
 const blockTweetAuthor = async (article: HTMLElement, username: string): Promise<boolean> => {
   const caretButton = findTweetCaretButton(article)
   if (!caretButton) {
     return false
   }
-  caretButton.click()
+  const restoreConfirmationSheet = hideBlockConfirmationSheet()
+  try {
+    caretButton.click()
 
-  const menuItem = await waitFor(() => findBlockMenuItem(username))
-  if (!menuItem) {
-    return false
+    const menuItem = await waitFor(() => findBlockMenuItem(username))
+    if (!menuItem) {
+      return false
+    }
+    menuItem.click()
+
+    const confirmButton = await waitFor(findBlockConfirmButton)
+    if (!confirmButton) {
+      return false
+    }
+    confirmButton.click()
+
+    return waitForConfirmDialogToClose()
+  } finally {
+    restoreConfirmationSheet()
   }
-  menuItem.click()
-
-  const confirmButton = await waitFor(findBlockConfirmButton)
-  if (!confirmButton) {
-    return false
-  }
-  confirmButton.click()
-
-  return waitForConfirmDialogToClose()
 }
 
 type BlockButtonState = 'idle' | 'processing' | 'done'
@@ -270,7 +289,18 @@ export const insertBlockButton = (article: HTMLElement): HTMLButtonElement | nul
     void handleBlockButtonClick(article, button, event)
   })
   const grokAction = findGrokAction(article, actionGroup)
-  actionGroup.insertBefore(button, grokAction)
+  if (grokAction instanceof HTMLElement && grokAction.tagName !== 'BUTTON') {
+    const blockAction = grokAction.cloneNode(false) as HTMLElement
+    blockAction.removeAttribute('id')
+    blockAction.removeAttribute('data-testid')
+    blockAction.removeAttribute('aria-label')
+    blockAction.removeAttribute('title')
+    blockAction.removeAttribute('role')
+    blockAction.appendChild(button)
+    actionGroup.insertBefore(blockAction, grokAction)
+  } else {
+    actionGroup.insertBefore(button, grokAction)
+  }
 
   return button
 }
