@@ -17,7 +17,7 @@ const buildTweetArticle = (username: string, withCaret = true): HTMLElement => {
       <a href="/${username}" role="link">@${username}</a>
     </div>
     <div class="tweet-header-actions">
-      <div class="grok-action-slot"><button aria-label="Grokのアクション">Grok</button></div>
+      <div class="grok-action-slot"><button aria-label="Grokのアクション" class="x-action-button x-round-button">Grok</button></div>
       <div>${withCaret ? '<button data-testid="caret" aria-label="More">...</button>' : ''}</div>
     </div>
     <div role="group">
@@ -105,7 +105,7 @@ describe('insertBlockButton / hasBlockButton', () => {
     const button = insertBlockButton(article)
 
     expect(button).not.toBeNull()
-    expect(button?.className).toBe('block-button')
+    expect(button?.classList.contains('block-button')).toBe(true)
     expect(button?.getAttribute('aria-label')).toBe('ブロック')
     expect(button?.getAttribute('title')).toBe('このユーザーをブロック')
     expect(button?.type).toBe('button')
@@ -132,24 +132,23 @@ describe('insertBlockButton / hasBlockButton', () => {
     expect(insertBlockButton(article)).toBeNull()
   })
 
-  it('提示されたスタイル（透明背景・白文字・角丸・padding・margin・pointer cursor）を適用する', () => {
+  it('Grokと同じボタンクラスと中央揃え寸法を適用する', () => {
     const article = buildTweetArticle('testuser')
     document.body.appendChild(article)
 
     const button = insertBlockButton(article)!
 
     expect(button.style.backgroundColor).toBe('transparent')
-    expect(button.style.color).toBe('white')
-    expect(button.style.borderRadius).toBe('5px')
-    expect(button.style.borderWidth).toBe('0px')
-    expect(button.style.paddingTop).toBe('0px')
-    expect(button.style.paddingBottom).toBe('0px')
-    expect(button.style.paddingLeft).toBe('5px')
-    expect(button.style.paddingRight).toBe('5px')
-    expect(button.style.marginTop).toBe('0px')
-    expect(button.style.marginBottom).toBe('0px')
-    expect(button.style.marginLeft).toBe('3px')
-    expect(button.style.marginRight).toBe('3px')
+    expect(button.classList.contains('x-action-button')).toBe(true)
+    expect(button.classList.contains('x-round-button')).toBe(true)
+    expect(button.style.display).toBe('flex')
+    expect(button.style.alignItems).toBe('center')
+    expect(button.style.justifyContent).toBe('center')
+    expect(button.style.width).toBe('34px')
+    expect(button.style.height).toBe('34px')
+    expect(button.style.padding).toBe('0px')
+    expect(button.style.margin).toBe('0px')
+    expect(button.style.lineHeight).toBe('1')
     expect(button.style.cursor).toBe('pointer')
   })
 

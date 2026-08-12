@@ -103,18 +103,16 @@ type BlockButtonState = 'idle' | 'processing' | 'done'
 // Xの既存アクション列を崩さない控えめなベーススタイル
 const applyBaseButtonStyle = (button: HTMLButtonElement): void => {
   button.style.backgroundColor = 'transparent'
-  button.style.color = 'white'
-  button.style.borderRadius = '5px'
-  button.style.borderWidth = '0'
-  button.style.borderStyle = 'none'
-  button.style.paddingTop = '0px'
-  button.style.paddingBottom = '0px'
-  button.style.paddingLeft = '5px'
-  button.style.paddingRight = '5px'
-  button.style.marginTop = '0px'
-  button.style.marginBottom = '0px'
-  button.style.marginLeft = '3px'
-  button.style.marginRight = '3px'
+  button.style.border = '0'
+  button.style.display = 'flex'
+  button.style.alignItems = 'center'
+  button.style.justifyContent = 'center'
+  button.style.width = '34px'
+  button.style.height = '34px'
+  button.style.padding = '0'
+  button.style.margin = '0'
+  button.style.lineHeight = '1'
+  button.style.fontSize = '16px'
   button.style.cursor = 'pointer'
 }
 
@@ -175,9 +173,10 @@ const handleBlockButtonClick = async (
 }
 
 // ブロックボタンを生成する
-const createBlockButton = (): HTMLButtonElement => {
+const createBlockButton = (grokButton: HTMLButtonElement): HTMLButtonElement => {
   const button = document.createElement('button')
-  button.className = BLOCK_BUTTON_CLASS
+  button.className = grokButton.className
+  button.classList.add(BLOCK_BUTTON_CLASS)
   button.setAttribute('aria-label', 'ブロック')
   button.setAttribute('title', 'このユーザーをブロック')
   button.type = 'button'
@@ -221,7 +220,12 @@ export const insertBlockButton = (article: HTMLElement): HTMLButtonElement | nul
     return null
   }
 
-  const button = createBlockButton()
+  const grokButton = grokAction.querySelector<HTMLButtonElement>('button')
+  if (!grokButton) {
+    return null
+  }
+
+  const button = createBlockButton(grokButton)
   button.addEventListener('click', (event) => {
     void handleBlockButtonClick(article, button, event)
   })
