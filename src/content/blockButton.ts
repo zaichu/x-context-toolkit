@@ -4,7 +4,6 @@ import { extractUsernameFromProfileUrl, findBlockMenuItem, findBlockConfirmButto
 
 const TWEET_SELECTOR = 'article[data-testid="tweet"]'
 const BLOCK_BUTTON_CLASS = 'block-button'
-const HIDE_BLOCK_SHEET_STYLE_ID = 'x-context-toolkit-hide-block-sheet'
 
 // 投稿者を特定するために優先的に確認するプロフィールリンクのセレクター
 const AUTHOR_LINK_SELECTORS = [
@@ -60,65 +59,10 @@ const findTweetCaretButton = (article: HTMLElement): HTMLButtonElement | null =>
   return null
 }
 
-// 要素が見つかるまでポーリングする
-const waitFor = <T>(
-  finder: () => T | null,
-  timeoutMs = 5000,
-  intervalMs = 100
-): Promise<T | null> => {
-  return new Promise((resolve) => {
-    const start = Date.now()
-
-    const check = () => {
-      const result = finder()
-      if (result) {
-        resolve(result)
-        return
-      }
-      if (Date.now() - start >= timeoutMs) {
-        resolve(null)
-        return
-      }
-      setTimeout(check, intervalMs)
-    }
-
-    check()
-  })
-}
-
-// 確認ダイアログが閉じるまで待つ（Xの操作完了の目安にする）
-const waitForConfirmDialogToClose = (timeoutMs = 5000, intervalMs = 100): Promise<boolean> => {
-  return new Promise((resolve) => {
-    const start = Date.now()
-
-    const check = () => {
-      if (!findBlockConfirmButton()) {
-        resolve(true)
-        return
-      }
-      if (Date.now() - start >= timeoutMs) {
-        resolve(false)
-        return
-      }
-      setTimeout(check, intervalMs)
-    }
-
-    check()
-  })
-}
-
-// Xの確認シートをユーザーに表示せず、DOM操作だけで確定する
-const hideBlockConfirmationSheet = (): (() => void) => {
-  const style = document.createElement('style')
-  style.id = HIDE_BLOCK_SHEET_STYLE_ID
-  style.textContent = `
-    #layers > div:has([data-testid="confirmationSheetConfirm"]) {
-      visibility: hidden !important;
-    }
-  `
-  document.head.appendChild(style)
-  return () => style.remove()
-}
+const createClickEvent = (): MouseEvent => new MouseEvent('click', {
+  bubbles: true,
+  cancelable: true,
+})
 
 // このポストの投稿者をX公式DOM経由でブロックする（別タブ・別ウィンドウは開かない）
 const blockTweetAuthor = async (article: HTMLElement, username: string): Promise<boolean> => {
@@ -126,26 +70,32 @@ const blockTweetAuthor = async (article: HTMLElement, username: string): Promise
   if (!caretButton) {
     return false
   }
-  const restoreConfirmationSheet = hideBlockConfirmationSheet()
-  try {
-    caretButton.click()
+  caretButton.dispatchEvent(createClickEvent())
 
-    const menuItem = await waitFor(() => findBlockMenuItem(username))
-    if (!menuItem) {
-      return false
-    }
-    menuItem.click()
-
-    const confirmButton = await waitFor(findBlockConfirmButton)
-    if (!confirmButton) {
-      return false
-    }
-    confirmButton.click()
-
-    return waitForConfirmDialogToClose()
-  } finally {
-    restoreConfirmationSheet()
-  }
+  return new Promise((resolve) => {
+    let menuClicked = false
+    // 2つの操作を同じ描画前に実行し、メニューと確認シートを画面に出さない
+    window.requestAnimationFrame(() => {
+      const menuItem = findBlockMenuItem(username)
+      if (menuItem) {
+        menuItem.dispatchEvent(createClickEvent())
+        menuClicked = true
+      }
+    })
+    window.requestAnimationFrame(() => {
+      if (!menuClicked) {
+        resolve(false)
+        return
+      }
+      const confirmButton = findBlockConfirmButton()
+      if (!confirmButton) {
+        resolve(false)
+        return
+      }
+      confirmButton.dispatchEvent(createClickEvent())
+      resolve(true)
+    })
+  })
 }
 
 type BlockButtonState = 'idle' | 'processing' | 'done'
@@ -237,16 +187,6 @@ const createBlockButton = (): HTMLButtonElement => {
   return button
 }
 
-// ボタンを挿入するアクション列（返信・リツイートなどのボタン群）を検索する
-const findActionGroup = (article: HTMLElement): HTMLElement | null => {
-  const replyButton = article.querySelector('[data-testid="reply"]')
-  const group = replyButton?.closest<HTMLElement>('[role="group"]')
-  if (group && group.closest('article') === article) {
-    return group
-  }
-  return null
-}
-
 // 投稿ヘッダーのGrokボタン直親を配置枠として取得する
 const findGrokAction = (article: HTMLElement): HTMLElement | null => {
   const grokButton = article.querySelector([
@@ -276,8 +216,8 @@ export const insertBlockButton = (article: HTMLElement): HTMLButtonElement | nul
   }
 
   const grokAction = findGrokAction(article)
-  const insertionContainer = grokAction?.parentElement ?? findActionGroup(article)
-  if (!insertionContainer) {
+  const insertionContainer = grokAction?.parentElement
+  if (!grokAction || !insertionContainer) {
     return null
   }
 
@@ -315,6 +255,10 @@ const processAddedNode = (node: Node): void => {
   }
   processArticle(node)
   node.querySelectorAll(TWEET_SELECTOR).forEach(processArticle)
+  const containingArticle = node.closest(TWEET_SELECTOR)
+  if (containingArticle) {
+    processArticle(containingArticle)
+  }
 }
 
 // React SPAで動的追加されるポストへMutationObserverで追従し、🚫ボタンを挿入する

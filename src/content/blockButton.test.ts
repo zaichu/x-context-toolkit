@@ -16,17 +16,23 @@ const buildTweetArticle = (username: string, withCaret = true): HTMLElement => {
       <a href="/${username}" role="link">表示名</a>
       <a href="/${username}" role="link">@${username}</a>
     </div>
+    <div class="tweet-header-actions">
+      <div class="grok-action-slot"><button aria-label="Grokのアクション">Grok</button></div>
+      <div>${withCaret ? '<button data-testid="caret" aria-label="More">...</button>' : ''}</div>
+    </div>
     <div role="group">
       <div><button data-testid="reply">reply</button></div>
       <div><button data-testid="retweet">retweet</button></div>
       <div><button data-testid="like">like</button></div>
     </div>
-    ${withCaret ? '<button data-testid="caret" aria-label="More">...</button>' : ''}
   `
   return article
 }
 
 const addGrokAction = (article: HTMLElement): HTMLElement => {
+  const existing = article.querySelector<HTMLElement>('.grok-action-slot')
+  if (existing) return existing
+
   const headerActions = document.createElement('div')
   headerActions.className = 'tweet-header-actions'
   const grokAction = document.createElement('div')
@@ -152,9 +158,8 @@ describe('insertBlockButton / hasBlockButton', () => {
     document.body.appendChild(article)
 
     const button = insertBlockButton(article)!
-    const actionGroup = article.querySelector('[role="group"]')
 
-    expect(button.parentElement).toBe(actionGroup)
+    expect(button.closest('.tweet-header-actions')).not.toBeNull()
   })
 
   it('Grokアクションがある場合はその直前（左側）に挿入する', () => {
@@ -166,6 +171,25 @@ describe('insertBlockButton / hasBlockButton', () => {
 
     expect(button.parentElement?.className).toBe(grokAction.className)
     expect(button.parentElement?.nextElementSibling).toBe(grokAction)
+  })
+
+  it('投稿ヘッダーのGrok領域がある場合は先頭に挿入する', () => {
+    const article = buildTweetArticle('testuser')
+    document.body.appendChild(article)
+
+    const button = insertBlockButton(article)!
+    const actionArea = article.querySelector('.tweet-header-actions')!
+
+    expect(actionArea.firstElementChild).toBe(button.parentElement)
+  })
+
+  it('Grok領域がまだ生成されていない場合は下部アクション列へフォールバックしない', () => {
+    const article = buildTweetArticle('testuser')
+    article.querySelector('.tweet-header-actions')?.remove()
+    document.body.appendChild(article)
+
+    expect(insertBlockButton(article)).toBeNull()
+    expect(article.querySelector('.block-button')).toBeNull()
   })
 })
 
@@ -256,6 +280,19 @@ describe('observeTweetArticles', () => {
     observer.disconnect()
   })
 
+  it('article追加後にGrok領域が遅延生成されてもボタンを挿入する', async () => {
+    const article = buildTweetArticle('testuser')
+    const headerActions = article.querySelector('.tweet-header-actions')!
+    headerActions.remove()
+    document.body.appendChild(article)
+    const observer = observeTweetArticles(document.body)
+
+    article.prepend(headerActions)
+
+    await vi.waitFor(() => expect(hasBlockButton(article)).toBe(true))
+    observer.disconnect()
+  })
+
   it('複数articleそれぞれに1つずつボタンを挿入する（重複処理しない）', () => {
     const article1 = buildTweetArticle('user1')
     const article2 = buildTweetArticle('user2')
@@ -273,6 +310,7 @@ describe('observeTweetArticles', () => {
 describe('ブロックボタンのクリック挙動', () => {
   afterEach(() => {
     document.body.innerHTML = ''
+    vi.restoreAllMocks()
     vi.unstubAllGlobals()
     vi.useRealTimers()
   })
@@ -286,9 +324,8 @@ describe('ブロックボタンのクリック挙動', () => {
     const confirmButton = document.createElement('button')
     confirmButton.setAttribute('data-testid', 'confirmationSheetConfirm')
     confirmButton.textContent = 'Block'
-    document.body.appendChild(confirmButton)
-
     menuItem.addEventListener('click', () => {
+      document.body.appendChild(confirmButton)
       confirmButton.addEventListener('click', () => {
         confirmButton.remove()
       })
@@ -323,41 +360,40 @@ describe('ブロックボタンのクリック挙動', () => {
     expect(sendMessage).not.toHaveBeenCalled()
   })
 
-  it('確認シートを画面に表示せずに確定ボタンを押す', async () => {
+  it('確認シートが描画される前に確定ボタンを押す', async () => {
     const sendMessage = vi.fn().mockResolvedValue(undefined)
     vi.stubGlobal('chrome', { runtime: { sendMessage } })
 
     const article = buildTweetArticle('testuser')
     document.body.appendChild(article)
     const button = insertBlockButton(article)!
-    let hiddenWhenConfirmed = false
+    let confirmedBeforePaint = false
+    let painted = false
+    const animationCallbacks: FrameRequestCallback[] = []
+    vi.spyOn(window, 'requestAnimationFrame').mockImplementation((callback) => {
+      animationCallbacks.push(callback)
+      return animationCallbacks.length
+    })
 
     const caretButton = article.querySelector('[data-testid="caret"]') as HTMLButtonElement
     caretButton.addEventListener('click', () => {
       const { menuItem, confirmButton } = appendGlobalMenuAndConfirm('testuser')
-      const layers = document.createElement('div')
-      layers.id = 'layers'
-      const sheet = document.createElement('div')
-      sheet.appendChild(confirmButton)
-      layers.appendChild(sheet)
-      document.body.appendChild(layers)
-
       menuItem.addEventListener('click', () => {
         confirmButton.addEventListener('click', () => {
-          hiddenWhenConfirmed = document.getElementById('x-context-toolkit-hide-block-sheet') !== null
+          confirmedBeforePaint = !painted
         }, { once: true })
       }, { once: true })
     })
 
     button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    animationCallbacks.forEach((callback) => callback(0))
+    painted = true
 
     await vi.waitFor(() => expect(button.textContent).toBe('✅'))
-    expect(hiddenWhenConfirmed).toBe(true)
-    expect(document.getElementById('x-context-toolkit-hide-block-sheet')).toBeNull()
+    expect(confirmedBeforePaint).toBe(true)
   })
 
   it('別ユーザー向けのメニュー項目は操作しない', async () => {
-    vi.useFakeTimers()
     const sendMessage = vi.fn().mockResolvedValue(undefined)
     vi.stubGlobal('chrome', { runtime: { sendMessage } })
 
@@ -380,9 +416,8 @@ describe('ブロックボタンのクリック挙動', () => {
     })
 
     buttonA.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-    await vi.runAllTimersAsync()
+    await vi.waitFor(() => expect(buttonA.disabled).toBe(false))
 
-    expect(buttonA.disabled).toBe(false)
     expect(wrongMenuClickSpy).not.toHaveBeenCalled()
     expect(sendMessage).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'showNotification', type: 'error' })
@@ -410,7 +445,6 @@ describe('ブロックボタンのクリック挙動', () => {
   })
 
   it('block項目が見つからない場合は再操作可能に戻し通知する', async () => {
-    vi.useFakeTimers()
     const sendMessage = vi.fn().mockResolvedValue(undefined)
     vi.stubGlobal('chrome', { runtime: { sendMessage } })
 
@@ -419,9 +453,8 @@ describe('ブロックボタンのクリック挙動', () => {
     const button = insertBlockButton(article)!
 
     button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
-    await vi.runAllTimersAsync()
+    await vi.waitFor(() => expect(button.disabled).toBe(false))
 
-    expect(button.disabled).toBe(false)
     expect(button.classList.contains('block-button--done')).toBe(false)
     expect(sendMessage).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'showNotification', type: 'error' })

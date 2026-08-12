@@ -75,6 +75,11 @@ const BLOCK_KEYWORDS = ['block', 'ブロック']
 
 // 開いているメニュー内から対象ユーザーのブロック項目を検索する
 export const findBlockMenuItem = (username: string): HTMLElement | null => {
+  const testIdItem = document.querySelector<HTMLElement>('[data-testid="block"]')
+  if (testIdItem) {
+    return testIdItem
+  }
+
   const targetMention = `@${username}`.toLowerCase()
   const items = document.querySelectorAll<HTMLElement>('[role="menuitem"]')
 

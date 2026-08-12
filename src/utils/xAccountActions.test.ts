@@ -63,6 +63,11 @@ describe('findBlockMenuItem', () => {
     expect(item?.textContent).toBe('Block @testuser')
   })
 
+  it('X公式のdata-testid付きブロック項目を直接選ぶ', () => {
+    document.body.innerHTML = '<div role="menuitem" data-testid="block">ブロック</div>'
+    expect(findBlockMenuItem('testuser')?.dataset.testid).toBe('block')
+  })
+
   it('日本語表記の項目も対象にする', () => {
     document.body.innerHTML = `
       <div role="menuitem">@testuser をブロック</div>
