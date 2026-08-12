@@ -105,6 +105,26 @@ describe('findBlockConfirmButton', () => {
     expect(findBlockConfirmButton()?.textContent).toBe('Block')
   })
 
+  it('ラベルのないXの#layers配下でも提示された確定ボタンを見つける', () => {
+    document.body.innerHTML = `
+      <div id="layers">
+        <div></div>
+        <div><div><div><div><div><div>
+          <div></div>
+          <div>
+            <div></div>
+            <div>
+              <div></div>
+              <div><button id="expected-confirm"></button><button>cancel</button></div>
+            </div>
+          </div>
+        </div></div></div></div></div></div>
+      </div>
+    `
+
+    expect(findBlockConfirmButton()?.id).toBe('expected-confirm')
+  })
+
   it('ダイアログがない場合はnullを返す', () => {
     document.body.innerHTML = ''
     expect(findBlockConfirmButton()).toBeNull()

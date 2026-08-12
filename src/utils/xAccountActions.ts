@@ -109,6 +109,18 @@ export const findBlockConfirmButton = (): HTMLButtonElement | null => {
     return testIdButton
   }
 
+  // Xの確認シートがラベルを持たない場合は、実DOMの確定ボタンを取得する
+  const xConfirmButton = document.evaluate(
+    '//*[@id="layers"]/div[2]/div/div/div/div/div/div[2]/div[2]/div[2]/button[1]',
+    document,
+    null,
+    XPathResult.FIRST_ORDERED_NODE_TYPE,
+    null
+  ).singleNodeValue
+  if (xConfirmButton instanceof HTMLButtonElement && !xConfirmButton.disabled) {
+    return xConfirmButton
+  }
+
   const dialog = document.querySelector('[role="alertdialog"], [role="dialog"]')
   if (!dialog) {
     return null
