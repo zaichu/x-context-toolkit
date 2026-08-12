@@ -1,5 +1,6 @@
-// コンテンツスクリプト - ミュートキーワード設定ページ用
+// コンテンツスクリプト - ミュートキーワード設定ページ・タイムライン用
 import { isMuteKeywordPage, fillMuteKeywordForm } from '../utils/xMuteKeywords'
+import { observeTweetArticles } from './blockButton'
 
 console.log('X Context Toolkit コンテンツスクリプトが読み込まれました')
 
@@ -7,7 +8,11 @@ console.log('X Context Toolkit コンテンツスクリプトが読み込まれ�
 const initialize = () => {
   if (isMuteKeywordPage()) {
     console.log('Xのミュートキーワード設定ページを検出しました')
+    return
   }
+
+  // タイムライン等のポストへ🚫ブロックボタンを常設する
+  observeTweetArticles(document.body)
 }
 
 // バックグラウンドスクリプトからのメッセージを受信

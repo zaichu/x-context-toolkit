@@ -1,33 +1,35 @@
 // X(Twitter)のミュートキーワード機能用DOM操作ユーティリティ
+import {
+  type BackgroundWindowHandle,
+  openBackgroundWindow,
+  waitForTabLoad,
+  closeBackgroundWindow,
+  revealBackgroundWindowForInspection,
+} from './backgroundWindow'
 
 // ミュートキーワード設定ページのURL
 export const ADD_MUTE_KEYWORDS_URL = 'https://x.com/settings/add_muted_keyword'
-export const MUTE_KEYWORDS_URL = 'https://x.com/settings/muted_keywords'
 
 // ミュートキーワードを追加する関数
 export const addMuteKeywordToX = async (keyword: string): Promise<boolean> => {
+  let handle: BackgroundWindowHandle | null = null
+
   try {
-    // 新しいタブでミュートキーワード追加ページを開く
-    const tab = await getMuteKeywordTab();
-
-    if (!tab.id) {
-      throw new Error('タブの作成に失敗しました')
-    }
-
-    await chrome.windows.update(tab.windowId!, { focused: true })
+    // 閲覧中のウィンドウに影響を与えない専用ウィンドウでミュートキーワード追加ページを開く
+    handle = await openBackgroundWindow(ADD_MUTE_KEYWORDS_URL)
 
     // ページが読み込まれるまで待機
-    await waitForTabLoad(tab.id)
+    await waitForTabLoad(handle.tabId)
 
     // コンテンツスクリプトにキーワード入力を指示
-    const result = await chrome.tabs.sendMessage(tab.id, {
+    const result = await chrome.tabs.sendMessage(handle.tabId, {
       action: 'fillMuteKeyword',
       keyword: keyword.trim()
     })
 
     if (result?.success) {
       console.log(`ミュートキーワード「${keyword}」を追加しました`)
-      console.log('ミュートキーワードの追加が完了しました。タブは開いたままにします。')
+      await closeBackgroundWindow(handle.windowId)
       return true
     } else {
       throw new Error('キーワードの入力に失敗しました')
@@ -35,58 +37,12 @@ export const addMuteKeywordToX = async (keyword: string): Promise<boolean> => {
 
   } catch (error) {
     console.error('ミュートキーワード追加エラー:', error)
+    if (handle) {
+      // 失敗時は原因を確認できるよう専用ウィンドウを通常表示へ戻す
+      await revealBackgroundWindowForInspection(handle.windowId)
+    }
     return false
   }
-}
-
-const getMuteKeywordTab = async (): Promise<chrome.tabs.Tab> => {
-  const tabs = await chrome.tabs.query({})
-  for (const tab of tabs) {
-    if (tab.url?.includes(ADD_MUTE_KEYWORDS_URL) || tab.url?.includes(MUTE_KEYWORDS_URL)) {
-      console.log('既存のミュートキーワードタブを再利用します')
-      await chrome.tabs.update(tab.id!, { url: ADD_MUTE_KEYWORDS_URL, active: true })
-      return tab
-    }
-  }
-
-  // 新しいタブでミュートキーワード追加ページを開く
-  console.log('新しいミュートキーワードタブを作成します')
-  return chrome.tabs.create({
-    url: ADD_MUTE_KEYWORDS_URL,
-    active: true
-  })
-}
-
-// タブの読み込み完了を待つ
-const waitForTabLoad = (tabId: number): Promise<void> => {
-  return new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => {
-      chrome.tabs.onUpdated.removeListener(listener)
-      reject(new Error('タブの読み込みがタイムアウトしました'))
-    }, 30000) // 30秒でタイムアウト
-
-    const listener = (changedTabId: number, changeInfo: any) => {
-      if (changedTabId === tabId && changeInfo.status === 'complete') {
-        chrome.tabs.onUpdated.removeListener(listener)
-        clearTimeout(timeout)
-        // DOM読み込み完了まで少し待機
-        setTimeout(resolve, 2000) // 待機時間を2秒に延長
-      }
-    }
-
-    // 既にタブが読み込み済みかチェック
-    chrome.tabs.get(tabId).then((tab) => {
-      if (tab.status === 'complete') {
-        clearTimeout(timeout)
-        setTimeout(resolve, 2000)
-      } else {
-        chrome.tabs.onUpdated.addListener(listener)
-      }
-    }).catch(() => {
-      clearTimeout(timeout)
-      chrome.tabs.onUpdated.addListener(listener)
-    })
-  })
 }
 
 // 現在のページがミュートキーワード設定ページかチェック

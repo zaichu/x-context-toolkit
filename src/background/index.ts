@@ -24,7 +24,7 @@ const createContextMenu = async () => {
 }
 
 // 右クリックメニューがクリックされた時の処理
-chrome.contextMenus.onClicked.addListener(async (info, tab) => {
+chrome.contextMenus.onClicked.addListener(async (info) => {
   if (info.menuItemId === 'add-mute-keyword' && info.selectionText) {
     try {
       const keyword = info.selectionText.trim()
