@@ -247,9 +247,9 @@ const findActionGroup = (article: HTMLElement): HTMLElement | null => {
   return null
 }
 
-// X側の表記揺れに対応してGrokアクションのラッパーを取得する
-const findGrokAction = (article: HTMLElement, actionGroup: HTMLElement): Element | null => {
-  const grokButton = actionGroup.querySelector([
+// 投稿ヘッダーのGrokボタン直親を配置枠として取得する
+const findGrokAction = (article: HTMLElement): HTMLElement | null => {
+  const grokButton = article.querySelector([
     '[data-testid="grok-action-button"]',
     '[data-testid="Grok"]',
     'button[aria-label^="Grok"]',
@@ -260,12 +260,8 @@ const findGrokAction = (article: HTMLElement, actionGroup: HTMLElement): Element
     return null
   }
 
-  let action: Element = grokButton
-  while (action.parentElement && action.parentElement !== actionGroup) {
-    action = action.parentElement
-  }
-
-  return action.parentElement === actionGroup ? action : null
+  const action = grokButton.parentElement
+  return action && action !== article && action.parentElement ? action : null
 }
 
 // articleに既にブロックボタンが挿入済みか判定する
@@ -279,8 +275,9 @@ export const insertBlockButton = (article: HTMLElement): HTMLButtonElement | nul
     return null
   }
 
-  const actionGroup = findActionGroup(article)
-  if (!actionGroup) {
+  const grokAction = findGrokAction(article)
+  const insertionContainer = grokAction?.parentElement ?? findActionGroup(article)
+  if (!insertionContainer) {
     return null
   }
 
@@ -288,8 +285,7 @@ export const insertBlockButton = (article: HTMLElement): HTMLButtonElement | nul
   button.addEventListener('click', (event) => {
     void handleBlockButtonClick(article, button, event)
   })
-  const grokAction = findGrokAction(article, actionGroup)
-  if (grokAction instanceof HTMLElement && grokAction.tagName !== 'BUTTON') {
+  if (grokAction && grokAction.tagName !== 'BUTTON') {
     const blockAction = grokAction.cloneNode(false) as HTMLElement
     blockAction.removeAttribute('id')
     blockAction.removeAttribute('data-testid')
@@ -297,9 +293,9 @@ export const insertBlockButton = (article: HTMLElement): HTMLButtonElement | nul
     blockAction.removeAttribute('title')
     blockAction.removeAttribute('role')
     blockAction.appendChild(button)
-    actionGroup.insertBefore(blockAction, grokAction)
+    insertionContainer.insertBefore(blockAction, grokAction)
   } else {
-    actionGroup.insertBefore(button, grokAction)
+    insertionContainer.insertBefore(button, grokAction)
   }
 
   return button

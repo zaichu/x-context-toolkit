@@ -27,11 +27,16 @@ const buildTweetArticle = (username: string, withCaret = true): HTMLElement => {
 }
 
 const addGrokAction = (article: HTMLElement): HTMLElement => {
-  const actionGroup = article.querySelector<HTMLElement>('[role="group"]')!
+  const headerActions = document.createElement('div')
+  headerActions.className = 'tweet-header-actions'
   const grokAction = document.createElement('div')
   grokAction.className = 'grok-action-slot'
   grokAction.innerHTML = '<button aria-label="Grokのアクション">Grok</button>'
-  actionGroup.appendChild(grokAction)
+  const caretAction = document.createElement('div')
+  const caret = article.querySelector<HTMLButtonElement>('[data-testid="caret"]')!
+  caretAction.appendChild(caret)
+  headerActions.append(grokAction, caretAction)
+  article.prepend(headerActions)
   return grokAction
 }
 
