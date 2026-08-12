@@ -4,6 +4,7 @@ import { addMuteKeyword } from '../utils/storage'
 
 export const Popup: React.FC = () => {
   const [keyword, setKeyword] = useState('')
+  const version = chrome.runtime.getManifest().version
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
@@ -24,13 +25,17 @@ export const Popup: React.FC = () => {
   return (
     <div className="container-fluid p-3" style={{ width: '350px' }}>
       {/* ヘッダー */}
-      <div className="d-flex align-items-center mb-3 pb-2 border-bottom">
+      <div className="d-flex align-items-center justify-content-between mb-3 pb-2 border-bottom">
+        <div className="d-flex align-items-center">
         <div className="me-2">
           <i className="bi bi-shield-check text-primary" style={{ fontSize: '1.5rem' }}></i>
         </div>
         <div>
           <h4 className="mb-0">Xにミュートキーワードを追加</h4>
+          <small className="text-secondary">ワンクリックブロック対応版</small>
         </div>
+        </div>
+        <span className="badge text-bg-dark border">v{version}</span>
       </div>
 
       {/* キーワード追加フォーム */}
