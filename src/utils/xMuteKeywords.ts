@@ -358,25 +358,47 @@ const findKeywordInput = (): HTMLInputElement | null => {
   return null
 }
 
-// 追加ボタンを検索
-const findAddButton = (): HTMLButtonElement | null => {
-  const selectors = [
-    SELECTORS.addButton,
-    'button[type="submit"]',
-    'button:not([disabled])'
-  ]
+// 表示中かつ有効（disabled/aria-disabled="true"でない）ボタンか
+const isUsableButton = (button: HTMLButtonElement | null): button is HTMLButtonElement => {
+  if (!button) return false
+  if (button.disabled) return false
+  if (button.getAttribute('aria-disabled') === 'true') return false
+  return !!button.offsetParent
+}
 
-  for (const selector of selectors) {
-    const buttons = document.querySelectorAll(selector) as NodeListOf<HTMLButtonElement>
-    for (const button of buttons) {
-      const text = button.textContent?.toLowerCase() || ''
-      if (text.includes('保存') && button.offsetParent && !button.disabled) {
-        return button
-      }
-    }
+// 多言語ラベルの網羅は増やさず、保存/Saveのみで判定する
+const SAVE_LABEL_PATTERN = /save|保存/i
+
+const hasSaveLabel = (button: HTMLButtonElement): boolean => {
+  const ariaLabel = button.getAttribute('aria-label') ?? ''
+  const text = button.textContent ?? ''
+  return SAVE_LABEL_PATTERN.test(ariaLabel) || SAVE_LABEL_PATTERN.test(text)
+}
+
+// 追加ボタンを検索
+// 1. data-testidによる一意な特定（最優先）
+// 2. keyword inputの所属form内に限定したbutton[type="submit"]（ラベル非依存）
+// 3. formが無い実機ケースのみ、primaryColumn内で候補が一意な場合に限りfallback
+// ページ全体のbutton走査は行わない（誤クリック防止）
+const findAddButton = (): HTMLButtonElement | null => {
+  const primary = document.querySelector(SELECTORS.addButton) as HTMLButtonElement | null
+  if (isUsableButton(primary)) return primary
+
+  const input = findKeywordInput()
+  const form = input?.closest('form') ?? null
+  if (form) {
+    const submitButton = form.querySelector('button[type="submit"]') as HTMLButtonElement | null
+    return isUsableButton(submitButton) ? submitButton : null
   }
 
-  return null
+  const container = document.querySelector(SELECTORS.container)
+  if (!container) return null
+
+  const candidates = Array.from(container.querySelectorAll('button')) as HTMLButtonElement[]
+  const usable = candidates.filter(
+    (button) => isUsableButton(button) && (button.getAttribute('type') === 'submit' || hasSaveLabel(button)),
+  )
+  return usable.length === 1 ? usable[0] : null
 }
 
 // キーワードを入力（ネイティブsetterで一括設定し、input/changeイベントを1回ずつ発火する）

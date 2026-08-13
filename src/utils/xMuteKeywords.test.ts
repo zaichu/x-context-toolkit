@@ -549,4 +549,64 @@ describe('fillMuteKeywordForm', () => {
     expect(result.success).toBe(false)
     consoleErrorSpy.mockRestore()
   })
+
+  it('keyword inputのform外に表示中の「保存」ボタンがあっても、それをクリックしない', async () => {
+    document.body.innerHTML = `
+      <div data-testid="primaryColumn">
+        <button type="button" id="decoy">保存</button>
+        <form>
+          <input name="keyword" />
+          <button type="submit">Save</button>
+        </form>
+      </div>
+    `
+    const input = document.querySelector('input[name="keyword"]') as HTMLInputElement
+    const decoy = document.getElementById('decoy') as HTMLButtonElement
+    const formButton = document.querySelector('form button[type="submit"]') as HTMLButtonElement
+    makeVisible(input)
+    makeVisible(decoy)
+    makeVisible(formButton)
+
+    let decoyClicked = false
+    let formButtonClicked = false
+    decoy.addEventListener('click', () => { decoyClicked = true })
+    // jsdomはHTMLFormElement.requestSubmitを未実装のため、submitボタンの既定動作（フォーム送信）を止める
+    formButton.addEventListener('click', (event) => { event.preventDefault(); formButtonClicked = true })
+
+    vi.useFakeTimers()
+    const resultPromise = fillMuteKeywordForm('テスト')
+    await vi.runAllTimersAsync()
+    const result = await resultPromise
+
+    expect(decoyClicked).toBe(false)
+    expect(formButtonClicked).toBe(true)
+    expect(result.success).toBe(true)
+  })
+
+  it('keyword inputと同じform内のbutton[type="submit"]は英語ラベルSaveでも検出してクリックする', async () => {
+    document.body.innerHTML = `
+      <div data-testid="primaryColumn">
+        <form>
+          <input name="keyword" />
+          <button type="submit">Save</button>
+        </form>
+      </div>
+    `
+    const input = document.querySelector('input[name="keyword"]') as HTMLInputElement
+    const button = document.querySelector('button[type="submit"]') as HTMLButtonElement
+    makeVisible(input)
+    makeVisible(button)
+
+    let clicked = false
+    // jsdomはHTMLFormElement.requestSubmitを未実装のため、submitボタンの既定動作（フォーム送信）を止める
+    button.addEventListener('click', (event) => { event.preventDefault(); clicked = true })
+
+    vi.useFakeTimers()
+    const resultPromise = fillMuteKeywordForm('テスト')
+    await vi.runAllTimersAsync()
+    const result = await resultPromise
+
+    expect(clicked).toBe(true)
+    expect(result.success).toBe(true)
+  })
 })
