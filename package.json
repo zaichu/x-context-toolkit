@@ -1,13 +1,15 @@
 {
   "name": "x-context-toolkit",
   "private": true,
-  "version": "1.0.10",
+  "version": "1.0.11",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "lint": "eslint .",
-    "test": "vitest run"
+    "test": "vitest run",
+    "store:assets": "python3 scripts/generate-store-assets.py",
+    "release": "npm run build && python3 scripts/build-release.py"
   },
   "dependencies": {
     "react": "^19.1.1",
