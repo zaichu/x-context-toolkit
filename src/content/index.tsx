@@ -27,11 +27,11 @@ chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
       }
 
       // フォームにキーワードを入力
-      const success = await fillMuteKeywordForm(request.keyword)
+      const result = await fillMuteKeywordForm(request.keyword)
 
-      if (success) {
+      if (result.success) {
         console.log(`ミュートキーワード「${request.keyword}」を入力しました`)
-        sendResponse({ success: true })
+        sendResponse({ success: true, timings: result.timings })
       } else {
         sendResponse({ success: false, error: 'フォームの入力に失敗しました' })
       }

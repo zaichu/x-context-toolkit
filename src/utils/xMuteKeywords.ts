@@ -14,9 +14,26 @@ const CONNECT_TIMEOUT_MS = 5_000
 // 接続後、応答（入力完了）を待つ上限（コンテンツスクリプトが応答しないケースでも永久待機しない）
 const RESPONSE_TIMEOUT_MS = 15_000
 
+// content側で計測した処理区間（キーワード本文は含めない）
+export interface SaveTimings {
+  inputFoundMs: number
+  saveClickedMs: number
+  settledMs: number
+}
+
+interface FillMuteKeywordResponse {
+  success: boolean
+  timings?: SaveTimings
+}
+
 // ミュートキーワードを追加する関数
+// 呼び出しは互いに独立（tabId・計測値はすべてローカル変数）なため、
+// 同時に複数回呼ばれても他の呼び出しの状態と競合しない。キューは不要。
 export const addMuteKeywordToX = async (keyword: string): Promise<boolean> => {
   let tabId: number | null = null
+  const t0 = performance.now()
+  const marks: { tabCreated?: number; contentReady?: number; responded?: number } = {}
+  let contentTimings: SaveTimings | undefined
 
   try {
     const trimmedKeyword = keyword.trim()
@@ -24,17 +41,26 @@ export const addMuteKeywordToX = async (keyword: string): Promise<boolean> => {
 
     // フォーカスを奪わない非アクティブな一時タブでX公式設定画面を開く
     tabId = await openBackgroundTab(ADD_MUTE_KEYWORDS_URL)
+    marks.tabCreated = performance.now()
 
     // タブ読み込み完了を待たず、作成直後から短い間隔でコンテンツスクリプトへ送信を再試行する
     const result = await withTimeout(
-      sendMessageUntilReady<{ success: boolean }>(
+      sendMessageUntilReady<FillMuteKeywordResponse>(
         tabId,
         { action: 'fillMuteKeyword', keyword: trimmedKeyword },
-        { intervalMs: CONNECT_INTERVAL_MS, timeoutMs: CONNECT_TIMEOUT_MS },
+        {
+          intervalMs: CONNECT_INTERVAL_MS,
+          timeoutMs: CONNECT_TIMEOUT_MS,
+          // 成功した（=受信先未準備エラーにならなかった）試行の直前時刻を、
+          // コンテンツスクリプトが応答可能になった目安として記録する
+          onAttempt: () => { marks.contentReady = performance.now() },
+        },
       ),
       RESPONSE_TIMEOUT_MS,
       'X設定画面からの応答がタイムアウトしました',
     )
+    marks.responded = performance.now()
+    contentTimings = result?.timings
 
     if (result?.success) {
       console.log(`ミュートキーワード「${keyword}」を追加しました`)
@@ -47,8 +73,34 @@ export const addMuteKeywordToX = async (keyword: string): Promise<boolean> => {
     console.error('ミュートキーワード追加エラー:', error)
     return false
   } finally {
+    logSaveTimings(t0, marks, contentTimings)
     if (tabId !== null) await closeBackgroundTab(tabId)
   }
+}
+
+// 実機でのボトルネック調査用に、各区間の所要時間だけを1行で出す（キーワード本文は含めない）
+const logSaveTimings = (
+  t0: number,
+  marks: { tabCreated?: number; contentReady?: number; responded?: number },
+  contentTimings?: SaveTimings,
+): void => {
+  // タブ作成前に失敗した場合（空キーワード等）は計測対象外
+  if (marks.tabCreated === undefined) return
+
+  const now = performance.now()
+  const round = (ms: number) => Math.round(ms)
+
+  const tabCreatedMs = marks.tabCreated - t0
+  const contentReadyMs = (marks.contentReady ?? marks.tabCreated) - marks.tabCreated
+  const inputFoundMs = contentTimings?.inputFoundMs ?? 0
+  const saveClickedMs = contentTimings?.saveClickedMs ?? 0
+  const settledMs = contentTimings?.settledMs ?? 0
+  const totalMs = (marks.responded ?? now) - t0
+
+  console.info(
+    `[muteKeyword] timings(ms) tabCreated=${round(tabCreatedMs)} contentReady=${round(contentReadyMs)} ` +
+    `inputFound=${round(inputFoundMs)} saveClicked=${round(saveClickedMs)} settled=${round(settledMs)} total=${round(totalMs)}`,
+  )
 }
 
 const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> =>
@@ -82,7 +134,8 @@ const SELECTORS = {
 }
 
 // DOM操作でミュートキーワードを入力・追加
-export const fillMuteKeywordForm = async (keyword: string): Promise<boolean> => {
+export const fillMuteKeywordForm = async (keyword: string): Promise<FillMuteKeywordResponse> => {
+  const tStart = performance.now()
   try {
     // ページが完全に読み込まれるまで待機
     await waitForElements()
@@ -92,6 +145,7 @@ export const fillMuteKeywordForm = async (keyword: string): Promise<boolean> => 
     if (!inputField) {
       throw new Error('キーワード入力フィールドが見つかりません')
     }
+    const tInputFound = performance.now()
 
     // キーワードを一括入力
     inputKeyword(inputField, keyword)
@@ -104,16 +158,25 @@ export const fillMuteKeywordForm = async (keyword: string): Promise<boolean> => 
 
     // ボタンをクリック
     addButton.click()
+    const tSaveClicked = performance.now()
 
-    // 通信をキャンセルせず、妥当な成功の兆候（ボタンの再有効化・消失）を有限時間待つ
-    await waitForSaveToSettle(addButton)
+    // 通信をキャンセルせず、妥当な成功の兆候（URL遷移・フォーム消失・ボタンの再有効化や消失）を有限時間待つ
+    await waitForSaveToSettle(addButton, inputField)
+    const tSettled = performance.now()
 
     console.log(`ミュートキーワード「${keyword}」を入力しました`)
-    return true
+    return {
+      success: true,
+      timings: {
+        inputFoundMs: tInputFound - tStart,
+        saveClickedMs: tSaveClicked - tInputFound,
+        settledMs: tSettled - tSaveClicked,
+      },
+    }
 
   } catch (error) {
     console.error('フォーム入力エラー:', error)
-    return false
+    return { success: false }
   }
 }
 
@@ -215,18 +278,41 @@ const waitForAddButtonEnabled = (timeoutMs = 5_000, intervalMs = 50): Promise<HT
   })
 }
 
-// 保存クリック後、通信をキャンセルせず、妥当な成功の兆候（ボタンの再有効化や消失）を有限時間待つ。
-// 兆候を検知できなくてもtimeoutMsで必ず打ち切り、永久待機にはしない。
-const waitForSaveToSettle = (button: HTMLButtonElement, timeoutMs = 3_000, intervalMs = 50): Promise<void> => {
+// 兆候を何も検知できなかった場合の安全待機の上限。
+// Xのミュートキーワード保存はXHR/fetchによる単純な書き込みで、通常のネットワークでは
+// 数百ms（目安300ms前後）で応答が返る。その2倍弱にあたる500msあれば大半のケースを
+// カバーでき、かつ以前の3,000ms固定待機に比べて大幅に短い。
+// この待機はあくまで保存リクエストの完了を待つための猶予であり、タブは
+// waitForSaveToSettleの解決後にのみ閉じるため、猶予中にリクエストがキャンセルされることはない。
+const SAVE_SETTLE_FALLBACK_TIMEOUT_MS = 500
+
+// 保存クリック後、通信をキャンセルせず、妥当な成功の兆候を有限時間待つ。
+// 次のいずれかを検知でき次第、即座に完了する:
+//   1. URLがミュートキーワード追加ページから離れた（保存後の画面遷移）
+//   2. キーワード入力欄がDOMから消えた（フォームの再描画・破棄）
+//   3. 保存ボタンがdisabledを経て再度有効化された、またはDOMから消えた
+// どれも観測できない場合でも、SAVE_SETTLE_FALLBACK_TIMEOUT_MSで必ず打ち切り、永久待機にはしない。
+const waitForSaveToSettle = (
+  button: HTMLButtonElement,
+  input: HTMLInputElement,
+  timeoutMs = SAVE_SETTLE_FALLBACK_TIMEOUT_MS,
+  intervalMs = 50,
+): Promise<void> => {
   return new Promise((resolve) => {
     const startedAt = Date.now()
+    const startUrl = window.location.href
     let sawSubmitting = false
+
     const check = () => {
-      const stillInDom = button.isConnected
-      const disabledNow = stillInDom && button.disabled
+      const buttonInDom = button.isConnected
+      const disabledNow = buttonInDom && button.disabled
       if (disabledNow) sawSubmitting = true
 
-      const settled = !stillInDom || (sawSubmitting && !disabledNow)
+      const navigatedAway = window.location.href !== startUrl
+      const formGone = !input.isConnected
+      const buttonSettled = !buttonInDom || (sawSubmitting && !disabledNow)
+
+      const settled = navigatedAway || formGone || buttonSettled
       if (settled || Date.now() - startedAt >= timeoutMs) {
         resolve()
         return

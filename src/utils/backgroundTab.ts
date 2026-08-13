@@ -23,13 +23,14 @@ const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout
 export const sendMessageUntilReady = async <T>(
   tabId: number,
   message: unknown,
-  options: { intervalMs?: number; timeoutMs?: number } = {},
+  options: { intervalMs?: number; timeoutMs?: number; onAttempt?: () => void } = {},
 ): Promise<T> => {
-  const { intervalMs = 50, timeoutMs = 15_000 } = options
+  const { intervalMs = 50, timeoutMs = 15_000, onAttempt } = options
   const startedAt = Date.now()
 
   for (; ;) {
     try {
+      onAttempt?.()
       return await chrome.tabs.sendMessage(tabId, message) as T
     } catch (error) {
       if (!isReceivingEndMissingError(error)) {

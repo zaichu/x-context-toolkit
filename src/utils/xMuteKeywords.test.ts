@@ -141,6 +141,48 @@ describe('addMuteKeywordToX', () => {
 
     consoleErrorSpy.mockRestore()
   })
+
+  it('同時に複数回呼ばれても互いに競合せず、それぞれ正しいタブに送信・クローズする', async () => {
+    let nextTabId = 300
+    const create = vi.fn().mockImplementation(async () => ({ id: nextTabId++ }))
+    const sendMessage = vi.fn().mockResolvedValue({ success: true })
+    const remove = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('chrome', { tabs: { create, sendMessage, remove } })
+
+    const [resultA, resultB] = await Promise.all([
+      addMuteKeywordToX('キーワードA'),
+      addMuteKeywordToX('キーワードB'),
+    ])
+
+    expect(resultA).toBe(true)
+    expect(resultB).toBe(true)
+    expect(create).toHaveBeenCalledTimes(2)
+    // それぞれ自分が作成したタブIDに対してのみ送信・クローズしており、取り違えがない
+    expect(sendMessage).toHaveBeenCalledWith(300, { action: 'fillMuteKeyword', keyword: 'キーワードA' })
+    expect(sendMessage).toHaveBeenCalledWith(301, { action: 'fillMuteKeyword', keyword: 'キーワードB' })
+    expect(remove).toHaveBeenCalledWith(300)
+    expect(remove).toHaveBeenCalledWith(301)
+  })
+
+  it('区間ごとの所要時間をキーワード本文を含めずに1行のconsole.infoで出力する', async () => {
+    const sendMessage = vi.fn().mockResolvedValue({
+      success: true,
+      timings: { inputFoundMs: 1, saveClickedMs: 2, settledMs: 3 },
+    })
+    stubChrome({ sendMessage })
+    const consoleInfoSpy = vi.spyOn(console, 'info').mockImplementation(() => {})
+
+    await addMuteKeywordToX('ひみつのキーワード')
+
+    expect(consoleInfoSpy).toHaveBeenCalledTimes(1)
+    const loggedLine = consoleInfoSpy.mock.calls[0][0] as string
+    expect(loggedLine).toMatch(
+      /tabCreated=\d+ contentReady=\d+ inputFound=\d+ saveClicked=\d+ settled=\d+ total=\d+/,
+    )
+    expect(loggedLine).not.toContain('ひみつのキーワード')
+
+    consoleInfoSpy.mockRestore()
+  })
 })
 
 describe('fillMuteKeywordForm', () => {
@@ -164,7 +206,7 @@ describe('fillMuteKeywordForm', () => {
     expect(input.value).toBe('テストキーワード')
     expect(inputEvents).toBe(1)
     expect(changeEvents).toBe(1)
-    expect(result).toBe(true)
+    expect(result.success).toBe(true)
   })
 
   it('保存ボタンが有効になるまで条件待ちしてからクリックする（固定スリープではない）', async () => {
@@ -187,7 +229,7 @@ describe('fillMuteKeywordForm', () => {
     const result = await resultPromise
 
     expect(clicked).toBe(true)
-    expect(result).toBe(true)
+    expect(result.success).toBe(true)
   })
 
   it('保存後は妥当な成功の兆候（ボタンの再有効化）を検知し次第完了し、固定1000ms待機をしない', async () => {
@@ -209,10 +251,69 @@ describe('fillMuteKeywordForm', () => {
     expect(resolved).toBe(true)
 
     const result = await resultPromise
-    expect(result).toBe(true)
+    expect(result.success).toBe(true)
   })
 
-  it('保存ボタンが見つからない場合はfalseで解決する', async () => {
+  it('保存後、URLがミュートキーワード追加ページから離れたら即座に完了する（disabledトグルを検知できなくてもよい）', async () => {
+    const { button } = renderMuteKeywordForm()
+    button.addEventListener('click', () => {
+      // disabledはトグルされないが、保存成功後にXがページ遷移するケースを模す
+      setTimeout(() => {
+        window.history.pushState({}, '', '/settings/muted_keywords')
+      }, 30)
+    })
+
+    vi.useFakeTimers()
+    let resolved = false
+    const resultPromise = fillMuteKeywordForm('テスト').then((r) => { resolved = true; return r })
+
+    // 要素検出の最初のポーリング(約100ms)+クリック後30msの遷移+ポーリング間隔を見込んでも、
+    // フォールバック上限(500ms)より十分早く完了するはず
+    await vi.advanceTimersByTimeAsync(250)
+    expect(resolved).toBe(true)
+
+    const result = await resultPromise
+    expect(result.success).toBe(true)
+  })
+
+  it('保存後、キーワード入力欄がDOMから消えたら即座に完了する（disabledトグルを検知できなくてもよい）', async () => {
+    const { input, button } = renderMuteKeywordForm()
+    button.addEventListener('click', () => {
+      // disabledはトグルされないが、保存成功後にフォームが再描画され入力欄が消えるケースを模す
+      setTimeout(() => { input.remove() }, 30)
+    })
+
+    vi.useFakeTimers()
+    let resolved = false
+    const resultPromise = fillMuteKeywordForm('テスト').then((r) => { resolved = true; return r })
+
+    await vi.advanceTimersByTimeAsync(250)
+    expect(resolved).toBe(true)
+
+    const result = await resultPromise
+    expect(result.success).toBe(true)
+  })
+
+  it('【仮説再現】保存後に成功の兆候(disabled再有効化・URL遷移・フォーム消失)を何も検知できない実機ケースでも、3秒ではなく短い猶予で完了する', async () => {
+    const { button } = renderMuteKeywordForm()
+    // 実機のXでは保存クリックしてもbutton.disabledがトグルされないケースがあり、
+    // その場合sawSubmittingが立たず、waitForSaveToSettleは兆候を一切検知できない。
+    // URL遷移もフォーム消失も起きない状態を再現する。
+    void button
+
+    vi.useFakeTimers()
+    let resolved = false
+    const resultPromise = fillMuteKeywordForm('テスト').then((r) => { resolved = true; return r })
+
+    // 兆候を検知できない場合でも、3秒ではなく十分短い猶予（900ms未満）で完了すべき
+    await vi.advanceTimersByTimeAsync(900)
+    expect(resolved).toBe(true)
+
+    const result = await resultPromise
+    expect(result.success).toBe(true)
+  })
+
+  it('保存ボタンが見つからない場合はsuccess:falseで解決する', async () => {
     renderMuteKeywordForm()
     document.querySelector('button[data-testid="settingsDetailSave"]')?.remove()
 
@@ -222,7 +323,7 @@ describe('fillMuteKeywordForm', () => {
     await vi.runAllTimersAsync()
     const result = await resultPromise
 
-    expect(result).toBe(false)
+    expect(result.success).toBe(false)
     consoleErrorSpy.mockRestore()
   })
 })
