@@ -2,8 +2,8 @@
 
 ## 成果物
 
-- アップロード用：`release/x-context-toolkit-v1.0.11.zip`
-- ローカル動作確認用：`release/x-context-toolkit-v1.0.11/`
+- アップロード用：`release/x-context-toolkit-v1.0.12.zip`
+- ローカル動作確認用：`release/x-context-toolkit-v1.0.12/`
 - ストアアイコン：`store-assets/icon-128.png`
 - 小型プロモ画像：`store-assets/promotional/promo-small-440x280.png`
 - スクリーンショット：`store-assets/screenshots/`の3枚

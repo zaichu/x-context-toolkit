@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "X Context Toolkit",
-  "version": "1.0.11",
+  "version": "1.0.12",
   "description": "テキスト選択からのミュートキーワード追加と、各ポストの🚫ボタンによる投稿者ブロックを、画面遷移なしで行えるChrome拡張機能",
   "permissions": [
     "tabs",
