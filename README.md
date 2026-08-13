@@ -95,6 +95,20 @@ npm run lint
 npm test
 ```
 
+### Chrome Web Store公開用パッケージ
+
+```bash
+npm run store:assets  # 掲載画像を再生成（Python 3 / Pillowが必要）
+npm run release       # release/へ展開版とアップロード用ZIPを生成
+```
+
+- `release/x-context-toolkit-v<version>/`: Chrome/Vivaldiでのローカル動作確認用
+- `release/x-context-toolkit-v<version>.zip`: Chrome Web Storeアップロード用
+- `store-assets/`: ストアアイコン、プロモ画像、スクリーンショット
+- `docs/store/`: 掲載文、プライバシーポリシー、Privacy practices、公開チェックリスト
+
+公開時は[公開チェックリスト](docs/store/publish-checklist-ja.md)を確認してください。
+
 ## セキュリティ
 
 この拡張機能は**防御的な用途**のみを目的としています：
