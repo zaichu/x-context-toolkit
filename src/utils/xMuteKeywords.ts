@@ -5,6 +5,7 @@ import {
   closeBackgroundTab,
   findExistingTab,
 } from './backgroundTab'
+import { waitForCondition } from './waitForCondition'
 
 // ミュートキーワード設定ページのURL
 export const ADD_MUTE_KEYWORDS_URL = 'https://x.com/settings/add_muted_keyword'
@@ -233,23 +234,17 @@ export const prepareAndFillMuteKeywordForm = async (keyword: string): Promise<Fi
   return fillMuteKeywordForm(keyword)
 }
 
-const waitForAddKeywordLink = (timeoutMs = 5_000, intervalMs = 50): Promise<HTMLAnchorElement | null> => {
-  return new Promise((resolve) => {
-    const startedAt = Date.now()
-    const check = () => {
-      const link = document.querySelector(ADD_KEYWORD_LINK_SELECTOR) as HTMLAnchorElement | null
-      if (link) {
-        resolve(link)
-        return
-      }
-      if (Date.now() - startedAt >= timeoutMs) {
-        resolve(null)
-        return
-      }
-      setTimeout(check, intervalMs)
-    }
-    check()
-  })
+const waitForAddKeywordLink = async (): Promise<HTMLAnchorElement | null> => {
+  const link = await waitForCondition<HTMLAnchorElement>(
+    () => (document.querySelector(ADD_KEYWORD_LINK_SELECTOR) as HTMLAnchorElement | null) ?? undefined,
+    {
+      timeoutMs: 5_000,
+      pollIntervalMs: 100,
+      observeTarget: document,
+      observeOptions: { childList: true, subtree: true },
+    },
+  )
+  return link ?? null
 }
 
 // ミュートキーワード入力フォームのセレクター
@@ -316,30 +311,26 @@ export const fillMuteKeywordForm = async (keyword: string): Promise<FillMuteKeyw
 }
 
 // 要素が読み込まれるまで待機
-const waitForElements = (timeoutMs = 15_000): Promise<void> => {
-  return new Promise((resolve, reject) => {
-    let attempts = 0
-    const startedAt = Date.now()
-
-    const checkInterval = setInterval(() => {
-      attempts++
+const waitForElements = async (): Promise<void> => {
+  const found = await waitForCondition<true>(
+    () => {
       const keywordInput = findKeywordInput()
-
       // より厳密な条件でチェック
-      if (keywordInput && keywordInput.offsetParent && !keywordInput.disabled) {
-        clearInterval(checkInterval)
-        console.log(`要素検出成功: ${attempts}回目の試行で発見`)
-        resolve()
-        return
-      }
-
-      if (Date.now() - startedAt >= timeoutMs) {
-        clearInterval(checkInterval)
-        reject(new Error('ミュートキーワード入力欄が見つかりませんでした'))
-      }
-
-    }, 100)
-  })
+      return keywordInput && keywordInput.offsetParent && !keywordInput.disabled ? true : undefined
+    },
+    {
+      timeoutMs: 15_000,
+      pollIntervalMs: 100,
+      observeTarget: document,
+      observeOptions: {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['disabled', 'style', 'hidden', 'class'],
+      },
+    },
+  )
+  if (!found) throw new Error('ミュートキーワード入力欄が見つかりませんでした')
 }
 
 // キーワード入力フィールドを検索
@@ -415,24 +406,23 @@ const setNativeInputValue = (input: HTMLInputElement, value: string) => {
   setter?.call(input, value)
 }
 
-// 追加ボタンが有効になるまで条件待ちする（固定スリープではなく、短い間隔でDOM状態を確認する）
-const waitForAddButtonEnabled = (timeoutMs = 5_000, intervalMs = 50): Promise<HTMLButtonElement | null> => {
-  return new Promise((resolve) => {
-    const startedAt = Date.now()
-    const check = () => {
-      const button = findAddButton()
-      if (button) {
-        resolve(button)
-        return
-      }
-      if (Date.now() - startedAt >= timeoutMs) {
-        resolve(null)
-        return
-      }
-      setTimeout(check, intervalMs)
-    }
-    check()
-  })
+// 追加ボタンが有効になるまで条件待ちする（固定スリープではなく、MutationObserver＋バックストップpollでDOM状態を確認する）
+const waitForAddButtonEnabled = async (): Promise<HTMLButtonElement | null> => {
+  const button = await waitForCondition<HTMLButtonElement>(
+    () => findAddButton() ?? undefined,
+    {
+      timeoutMs: 5_000,
+      pollIntervalMs: 100,
+      observeTarget: document,
+      observeOptions: {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['disabled', 'aria-disabled', 'style', 'hidden', 'class'],
+      },
+    },
+  )
+  return button ?? null
 }
 
 // 兆候を何も検知できなかった場合の安全待機の上限。
@@ -449,18 +439,17 @@ const SAVE_SETTLE_FALLBACK_TIMEOUT_MS = 500
 //   2. キーワード入力欄がDOMから消えた（フォームの再描画・破棄）
 //   3. 保存ボタンがdisabledを経て再度有効化された、またはDOMから消えた
 // どれも観測できない場合でも、SAVE_SETTLE_FALLBACK_TIMEOUT_MSで必ず打ち切り、永久待機にはしない。
-const waitForSaveToSettle = (
+const waitForSaveToSettle = async (
   button: HTMLButtonElement,
   input: HTMLInputElement,
   timeoutMs = SAVE_SETTLE_FALLBACK_TIMEOUT_MS,
-  intervalMs = 50,
 ): Promise<void> => {
-  return new Promise((resolve) => {
-    const startedAt = Date.now()
-    const startUrl = window.location.href
-    let sawSubmitting = false
+  const startUrl = window.location.href
+  let sawSubmitting = false
 
-    const check = () => {
+  // URL変更のようにMutationObserverでは拾えない変化もあるため、バックストップpoll(50ms)を維持する
+  await waitForCondition<true>(
+    () => {
       const buttonInDom = button.isConnected
       const disabledNow = buttonInDom && button.disabled
       if (disabledNow) sawSubmitting = true
@@ -469,13 +458,18 @@ const waitForSaveToSettle = (
       const formGone = !input.isConnected
       const buttonSettled = !buttonInDom || (sawSubmitting && !disabledNow)
 
-      const settled = navigatedAway || formGone || buttonSettled
-      if (settled || Date.now() - startedAt >= timeoutMs) {
-        resolve()
-        return
-      }
-      setTimeout(check, intervalMs)
-    }
-    check()
-  })
+      return navigatedAway || formGone || buttonSettled ? true : undefined
+    },
+    {
+      timeoutMs,
+      pollIntervalMs: 50,
+      observeTarget: document,
+      observeOptions: {
+        childList: true,
+        subtree: true,
+        attributes: true,
+        attributeFilter: ['disabled', 'aria-disabled'],
+      },
+    },
+  )
 }
