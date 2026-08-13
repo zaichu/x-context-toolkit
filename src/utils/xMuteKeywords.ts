@@ -1,35 +1,36 @@
 // X(Twitter)のミュートキーワード機能用DOM操作ユーティリティ
 import {
-  type BackgroundWindowHandle,
-  openBackgroundWindow,
+  openBackgroundTab,
   waitForTabLoad,
-  closeBackgroundWindow,
-  revealBackgroundWindowForInspection,
-} from './backgroundWindow'
+  closeBackgroundTab,
+} from './backgroundTab'
 
 // ミュートキーワード設定ページのURL
 export const ADD_MUTE_KEYWORDS_URL = 'https://x.com/settings/add_muted_keyword'
 
 // ミュートキーワードを追加する関数
 export const addMuteKeywordToX = async (keyword: string): Promise<boolean> => {
-  let handle: BackgroundWindowHandle | null = null
+  let tabId: number | null = null
 
   try {
-    // 閲覧中のウィンドウに影響を与えない専用ウィンドウでミュートキーワード追加ページを開く
-    handle = await openBackgroundWindow(ADD_MUTE_KEYWORDS_URL)
+    const trimmedKeyword = keyword.trim()
+    if (!trimmedKeyword) throw new Error('キーワードが空です')
+
+    // フォーカスを奪わない非アクティブな一時タブでX公式設定画面を開く
+    tabId = await openBackgroundTab(ADD_MUTE_KEYWORDS_URL)
 
     // ページが読み込まれるまで待機
-    await waitForTabLoad(handle.tabId)
+    await waitForTabLoad(tabId)
 
     // コンテンツスクリプトにキーワード入力を指示
-    const result = await chrome.tabs.sendMessage(handle.tabId, {
-      action: 'fillMuteKeyword',
-      keyword: keyword.trim()
-    })
+    const result = await withTimeout(
+      chrome.tabs.sendMessage(tabId, { action: 'fillMuteKeyword', keyword: trimmedKeyword }),
+      15_000,
+      'X設定画面からの応答がタイムアウトしました',
+    )
 
     if (result?.success) {
       console.log(`ミュートキーワード「${keyword}」を追加しました`)
-      await closeBackgroundWindow(handle.windowId)
       return true
     } else {
       throw new Error('キーワードの入力に失敗しました')
@@ -37,13 +38,20 @@ export const addMuteKeywordToX = async (keyword: string): Promise<boolean> => {
 
   } catch (error) {
     console.error('ミュートキーワード追加エラー:', error)
-    if (handle) {
-      // 失敗時は原因を確認できるよう専用ウィンドウを通常表示へ戻す
-      await revealBackgroundWindowForInspection(handle.windowId)
-    }
     return false
+  } finally {
+    if (tabId !== null) await closeBackgroundTab(tabId)
   }
 }
+
+const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> =>
+  new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => reject(new Error(message)), timeoutMs)
+    promise.then(
+      (value) => { clearTimeout(timeout); resolve(value) },
+      (error) => { clearTimeout(timeout); reject(error) },
+    )
+  })
 
 // 現在のページがミュートキーワード設定ページかチェック
 export const isMuteKeywordPage = (): boolean => {
@@ -106,9 +114,10 @@ export const fillMuteKeywordForm = async (keyword: string): Promise<boolean> => 
 }
 
 // 要素が読み込まれるまで待機
-const waitForElements = (): Promise<void> => {
-  return new Promise((resolve) => {
+const waitForElements = (timeoutMs = 15_000): Promise<void> => {
+  return new Promise((resolve, reject) => {
     let attempts = 0
+    const startedAt = Date.now()
 
     const checkInterval = setInterval(() => {
       attempts++
@@ -119,6 +128,12 @@ const waitForElements = (): Promise<void> => {
         clearInterval(checkInterval)
         console.log(`要素検出成功: ${attempts}回目の試行で発見`)
         resolve()
+        return
+      }
+
+      if (Date.now() - startedAt >= timeoutMs) {
+        clearInterval(checkInterval)
+        reject(new Error('ミュートキーワード入力欄が見つかりませんでした'))
       }
 
     }, 100)
@@ -168,7 +183,7 @@ const inputKeyword = async (input: HTMLInputElement, keyword: string): Promise<v
   input.focus()
 
   // 既存の値をクリア
-  input.value = ''
+  setNativeInputValue(input, '')
 
   // イベントをトリガー
   input.dispatchEvent(new Event('focus', { bubbles: true }))
@@ -176,7 +191,7 @@ const inputKeyword = async (input: HTMLInputElement, keyword: string): Promise<v
 
   // 文字を一文字ずつ入力（Reactの仮想DOMに対応）
   for (let i = 0; i < keyword.length; i++) {
-    input.value = keyword.substring(0, i + 1)
+    setNativeInputValue(input, keyword.substring(0, i + 1))
     input.dispatchEvent(new Event('input', { bubbles: true }))
     await sleep(50) // 少し待機
   }
@@ -184,6 +199,12 @@ const inputKeyword = async (input: HTMLInputElement, keyword: string): Promise<v
   // 最終的なイベント
   input.dispatchEvent(new Event('change', { bubbles: true }))
   input.dispatchEvent(new Event('blur', { bubbles: true }))
+}
+
+// React管理下のinputでも変更として認識されるよう、ネイティブsetterを使う。
+const setNativeInputValue = (input: HTMLInputElement, value: string) => {
+  const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set
+  setter?.call(input, value)
 }
 
 // 待機用ユーティリティ

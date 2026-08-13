@@ -43,7 +43,7 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
       await addMuteKeyword(keyword)
 
       // 成功通知
-      await showNotification(`「${keyword}」をXのミュートキーワード設定ページに入力中...`, 'success')
+      await showNotification(`「${keyword}」をXのミュートキーワードに追加しました`, 'success')
 
     } catch (error) {
       console.error('ミュートキーワード追加エラー:', error)
@@ -56,12 +56,6 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
 // コンテンツスクリプトからのメッセージを処理
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('バックグラウンドでメッセージを受信:', request)
-
-  if (request.action === 'fillMuteKeyword') {
-    // ミュートキーワード設定ページでのフォーム入力処理
-    sendResponse({ success: true })
-    return true
-  }
 
   if (request.action === 'showNotification') {
     showNotification(request.message, request.type || 'info')
