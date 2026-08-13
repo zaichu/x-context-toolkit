@@ -1,5 +1,16 @@
 // バックグラウンドサービスワーカー
-import { addMuteKeyword } from '../utils/storage'
+import { addMuteKeywordToX } from '../utils/xMuteKeywords'
+import { createMuteQueue, truncateForNotification } from './muteQueue'
+
+// ミュートキーワード追加の唯一の所有者。Popup・右クリックはどちらもこのキューへenqueueするだけで、
+// X側への保存はここで直列に行う。モジュールスコープに保持することで、
+// Popupが閉じてonMessageの応答が済んだ後も、処理チェーンはService Worker内で継続する。
+const muteQueue = createMuteQueue({
+  addMuteKeywordToX,
+  notifyFailure: async (keyword) => {
+    await showNotification(`「${truncateForNotification(keyword)}」の追加に失敗しました`, 'error')
+  },
+})
 
 // 拡張機能がインストールされた時の処理
 chrome.runtime.onInstalled.addListener(async () => {
@@ -24,42 +35,31 @@ const createContextMenu = async () => {
 }
 
 // 右クリックメニューがクリックされた時の処理
+// enqueue関数はPopupからのenqueueMuteKeywordと共通。受付成功時にクリック直後の成功通知は出さない
+// （保存の成否はキュー処理側でしか分からないため、失敗時のみ後から通知される）。
 chrome.contextMenus.onClicked.addListener(async (info) => {
   if (info.menuItemId === 'add-mute-keyword' && info.selectionText) {
-    try {
-      const keyword = info.selectionText.trim()
-
-      if (keyword.length > 100) {
-        await showNotification('キーワードが長すぎます (最大100文字)', 'error')
-        return
-      }
-
-      if (keyword.length === 0) {
-        await showNotification('有効なキーワードを選択してください', 'error')
-        return
-      }
-
-      // Xのミュートキーワードページに追加
-      await addMuteKeyword(keyword)
-
-      // 成功通知
-      await showNotification(`「${keyword}」をXのミュートキーワードに追加しました`, 'success')
-
-    } catch (error) {
-      console.error('ミュートキーワード追加エラー:', error)
-      const message = error instanceof Error ? error.message : 'キーワードの追加に失敗しました'
-      await showNotification(message, 'error')
+    const result = muteQueue.enqueue(info.selectionText)
+    if (!result.accepted && result.error) {
+      await showNotification(result.error, 'error')
     }
   }
 })
 
-// コンテンツスクリプトからのメッセージを処理
+// Popupおよびコンテンツスクリプトからのメッセージ(action)を処理
 chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   console.log('バックグラウンドでメッセージを受信:', request)
+
+  if (request.action === 'enqueueMuteKeyword') {
+    // 検証・キュー投入は同期的に完了するため、X側への保存完了を待たずすぐ応答する
+    sendResponse(muteQueue.enqueue(request.keyword))
+    return false
+  }
 
   if (request.action === 'showNotification') {
     showNotification(request.message, request.type || 'info')
     sendResponse({ success: true })
+    return true
   }
 
   return true
