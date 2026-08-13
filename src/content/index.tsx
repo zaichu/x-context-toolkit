@@ -1,5 +1,10 @@
 // コンテンツスクリプト - ミュートキーワード設定ページ・タイムライン用
-import { isMuteKeywordPage, fillMuteKeywordForm } from '../utils/xMuteKeywords'
+import {
+  isMuteKeywordPage,
+  isMuteKeywordsListPage,
+  fillMuteKeywordForm,
+  prepareAndFillMuteKeywordForm,
+} from '../utils/xMuteKeywords'
 import { observeTweetArticles } from './blockButton'
 
 console.log('X Context Toolkit コンテンツスクリプトが読み込まれました')
@@ -28,6 +33,30 @@ chrome.runtime.onMessage.addListener(async (request, sender, sendResponse) => {
 
       // フォームにキーワードを入力
       const result = await fillMuteKeywordForm(request.keyword)
+
+      if (result.success) {
+        console.log(`ミュートキーワード「${request.keyword}」を入力しました`)
+        sendResponse({ success: true, timings: result.timings })
+      } else {
+        sendResponse({ success: false, error: 'フォームの入力に失敗しました' })
+      }
+
+    } catch (error) {
+      console.error('ミュートキーワード入力エラー:', error)
+      sendResponse({ success: false, error: error instanceof Error ? error.message : '不明なエラー' })
+    }
+    return true // 非同期レスポンスを有効にする
+  }
+
+  if (request.action === 'prepareAndFillMuteKeyword' && request.keyword) {
+    try {
+      if (!isMuteKeywordsListPage()) {
+        sendResponse({ success: false, error: 'ミュートキーワード一覧ページではありません' })
+        return
+      }
+
+      // 追加リンクをクリックしてSPA遷移させてからフォームにキーワードを入力
+      const result = await prepareAndFillMuteKeywordForm(request.keyword)
 
       if (result.success) {
         console.log(`ミュートキーワード「${request.keyword}」を入力しました`)

@@ -51,3 +51,22 @@ export const closeBackgroundTab = async (tabId: number): Promise<void> => {
     console.error('一時タブのクローズに失敗:', error)
   }
 }
+
+// 完全一致URLのタブを優先度順（配列の先頭ほど優先）に探す。
+// 呼び出し側は候補URLごとにkindを指定し、最初に見つかった候補のkind・tabIdを受け取る。
+export const findExistingTab = async <T extends string>(
+  candidates: Array<{ kind: T; url: string }>,
+): Promise<{ tabId: number; kind: T } | null> => {
+  const results = await Promise.all(
+    candidates.map(async ({ kind, url }) => ({ kind, tabs: await chrome.tabs.query({ url }) })),
+  )
+
+  for (const { kind, tabs } of results) {
+    const match = tabs.find((tab) => tab.id !== undefined)
+    if (match?.id !== undefined) {
+      return { tabId: match.id, kind }
+    }
+  }
+
+  return null
+}

@@ -3,10 +3,13 @@ import {
   openBackgroundTab,
   sendMessageUntilReady,
   closeBackgroundTab,
+  findExistingTab,
 } from './backgroundTab'
 
 // ミュートキーワード設定ページのURL
 export const ADD_MUTE_KEYWORDS_URL = 'https://x.com/settings/add_muted_keyword'
+// ミュートキーワード一覧ページのURL（ここから追加リンクをクリックしてもフォームに到達できる）
+export const MUTED_KEYWORDS_URL = 'https://x.com/settings/muted_keywords'
 
 // コンテンツスクリプトへの接続を再試行する間隔・上限（タブ読み込み完了を待たず、早期登録済みのリスナーに届き次第すぐ送る）
 const CONNECT_INTERVAL_MS = 50
@@ -26,18 +29,104 @@ interface FillMuteKeywordResponse {
   timings?: SaveTimings
 }
 
+type ExistingTabKind = 'add_muted_keyword' | 'muted_keywords'
+
+// 既存タブ再利用経路の直列化用キュー。
+// 同時に複数呼ばれた場合でも同じ既存タブへ同時に送信しないよう、
+// 「既存タブを探す〜応答を受け取る」までを1本のキューで直列実行する。
+// （新規一時タブ方式は呼び出しごとに独立したタブを使うため対象外）
+let reuseQueue: Promise<unknown> = Promise.resolve()
+const runExclusive = <T>(task: () => Promise<T>): Promise<T> => {
+  const run = reuseQueue.then(task, task)
+  reuseQueue = run.then(
+    () => undefined,
+    () => undefined,
+  )
+  return run
+}
+
+interface TimingMarks {
+  tabCreated?: number
+  contentReady?: number
+  responded?: number
+}
+
+type ReuseResult =
+  | { handled: true; success: boolean; timings?: SaveTimings }
+  | { handled: false }
+
+// 既存のX設定タブ（add_muted_keyword優先、次点でmuted_keywords）を再利用できるか試みる。
+// 既存タブが見つからない、またはメッセージ送信自体が届かない（受信不能・タイムアウト）場合はhandled:falseを返し、
+// 呼び出し元が新規一時タブ方式へフォールバックする。
+// 一方、既存タブへメッセージは届いたがフォーム処理自体が失敗した場合はhandled:trueかつsuccess:falseを返す。
+// これは、二重登録を避けるため新規タブへの再試行をしないことを呼び出し元へ伝えるため。
+const tryReuseExistingTab = (keyword: string, marks: TimingMarks): Promise<ReuseResult> =>
+  runExclusive(async () => {
+    let existing: { tabId: number; kind: ExistingTabKind } | null
+    try {
+      existing = await findExistingTab<ExistingTabKind>([
+        { kind: 'add_muted_keyword', url: ADD_MUTE_KEYWORDS_URL },
+        { kind: 'muted_keywords', url: MUTED_KEYWORDS_URL },
+      ])
+    } catch {
+      return { handled: false }
+    }
+    if (!existing) return { handled: false }
+
+    marks.tabCreated = performance.now()
+    const action = existing.kind === 'add_muted_keyword' ? 'fillMuteKeyword' : 'prepareAndFillMuteKeyword'
+
+    try {
+      const result = await withTimeout(
+        sendMessageUntilReady<FillMuteKeywordResponse>(
+          existing.tabId,
+          { action, keyword },
+          {
+            intervalMs: CONNECT_INTERVAL_MS,
+            timeoutMs: CONNECT_TIMEOUT_MS,
+            onAttempt: () => { marks.contentReady = performance.now() },
+          },
+        ),
+        RESPONSE_TIMEOUT_MS,
+        'X設定画面からの応答がタイムアウトしました',
+      )
+      marks.responded = performance.now()
+      return { handled: true, success: !!result?.success, timings: result?.timings }
+    } catch {
+      // 既存タブへ届かなかった（受信不能・タイムアウト）ケース。フォーム処理には至っていないため
+      // 新規タブへのフォールバックで二重登録にはならない。
+      return { handled: false }
+    }
+  })
+
 // ミュートキーワードを追加する関数
-// 呼び出しは互いに独立（tabId・計測値はすべてローカル変数）なため、
-// 同時に複数回呼ばれても他の呼び出しの状態と競合しない。キューは不要。
+// 既存のX設定タブ（再利用経路）はキューで直列化しているが、新規一時タブ方式の呼び出し同士は
+// 互いに独立（tabId・計測値はすべてローカル変数）なため、同時に複数回呼ばれても競合しない。
 export const addMuteKeywordToX = async (keyword: string): Promise<boolean> => {
   let tabId: number | null = null
   const t0 = performance.now()
-  const marks: { tabCreated?: number; contentReady?: number; responded?: number } = {}
+  const marks: TimingMarks = {}
   let contentTimings: SaveTimings | undefined
+  let reusedTab = false
 
   try {
     const trimmedKeyword = keyword.trim()
     if (!trimmedKeyword) throw new Error('キーワードが空です')
+
+    // 既存のX設定タブがあれば再利用する（cold loadの回避）。
+    // 既存タブが見つからない/メッセージが届かない場合のみ新規一時タブ方式にフォールバックする。
+    const reuseResult = await tryReuseExistingTab(trimmedKeyword, marks)
+    if (reuseResult.handled) {
+      reusedTab = true
+      contentTimings = reuseResult.timings
+      if (reuseResult.success) {
+        console.log(`ミュートキーワード「${keyword}」を追加しました`)
+        return true
+      } else {
+        // 既存タブ内のフォーム処理自体が失敗している。二重登録を避けるため新規タブへは再試行しない。
+        throw new Error('キーワードの入力に失敗しました')
+      }
+    }
 
     // フォーカスを奪わない非アクティブな一時タブでX公式設定画面を開く
     tabId = await openBackgroundTab(ADD_MUTE_KEYWORDS_URL)
@@ -73,7 +162,7 @@ export const addMuteKeywordToX = async (keyword: string): Promise<boolean> => {
     console.error('ミュートキーワード追加エラー:', error)
     return false
   } finally {
-    logSaveTimings(t0, marks, contentTimings)
+    logSaveTimings(t0, marks, contentTimings, reusedTab)
     if (tabId !== null) await closeBackgroundTab(tabId)
   }
 }
@@ -81,10 +170,11 @@ export const addMuteKeywordToX = async (keyword: string): Promise<boolean> => {
 // 実機でのボトルネック調査用に、各区間の所要時間だけを1行で出す（キーワード本文は含めない）
 const logSaveTimings = (
   t0: number,
-  marks: { tabCreated?: number; contentReady?: number; responded?: number },
-  contentTimings?: SaveTimings,
+  marks: TimingMarks,
+  contentTimings: SaveTimings | undefined,
+  reusedTab: boolean,
 ): void => {
-  // タブ作成前に失敗した場合（空キーワード等）は計測対象外
+  // タブ作成前・既存タブ再利用開始前に失敗した場合（空キーワード等）は計測対象外
   if (marks.tabCreated === undefined) return
 
   const now = performance.now()
@@ -99,7 +189,8 @@ const logSaveTimings = (
 
   console.info(
     `[muteKeyword] timings(ms) tabCreated=${round(tabCreatedMs)} contentReady=${round(contentReadyMs)} ` +
-    `inputFound=${round(inputFoundMs)} saveClicked=${round(saveClickedMs)} settled=${round(settledMs)} total=${round(totalMs)}`,
+    `inputFound=${round(inputFoundMs)} saveClicked=${round(saveClickedMs)} settled=${round(settledMs)} total=${round(totalMs)} ` +
+    `reusedTab=${reusedTab}`,
   )
 }
 
@@ -115,6 +206,50 @@ const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, message: string)
 // 現在のページがミュートキーワード設定ページかチェック
 export const isMuteKeywordPage = (): boolean => {
   return window.location.href.includes(ADD_MUTE_KEYWORDS_URL)
+}
+
+// 現在のページがミュートキーワード一覧ページかチェック
+export const isMuteKeywordsListPage = (): boolean => {
+  return window.location.href.includes(MUTED_KEYWORDS_URL)
+}
+
+// ミュートキーワード一覧ページにある追加リンク
+const ADD_KEYWORD_LINK_SELECTOR = 'a[aria-label="ミュートする単語またはフレーズを追加"]'
+
+// ミュートキーワード一覧ページから追加リンクをクリックし、SPA遷移後にフォームへ入力する
+export const prepareAndFillMuteKeywordForm = async (keyword: string): Promise<FillMuteKeywordResponse> => {
+  try {
+    const link = await waitForAddKeywordLink()
+    if (!link) {
+      throw new Error('ミュートキーワード追加リンクが見つかりません')
+    }
+    link.click()
+  } catch (error) {
+    console.error('ミュートキーワード追加リンクの操作エラー:', error)
+    return { success: false }
+  }
+
+  // クリック後はfillMuteKeywordFormのwaitForElementsがSPA遷移によるフォーム出現を待つ
+  return fillMuteKeywordForm(keyword)
+}
+
+const waitForAddKeywordLink = (timeoutMs = 5_000, intervalMs = 50): Promise<HTMLAnchorElement | null> => {
+  return new Promise((resolve) => {
+    const startedAt = Date.now()
+    const check = () => {
+      const link = document.querySelector(ADD_KEYWORD_LINK_SELECTOR) as HTMLAnchorElement | null
+      if (link) {
+        resolve(link)
+        return
+      }
+      if (Date.now() - startedAt >= timeoutMs) {
+        resolve(null)
+        return
+      }
+      setTimeout(check, intervalMs)
+    }
+    check()
+  })
 }
 
 // ミュートキーワード入力フォームのセレクター

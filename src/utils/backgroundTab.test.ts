@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { closeBackgroundTab, openBackgroundTab, sendMessageUntilReady } from './backgroundTab'
+import { closeBackgroundTab, findExistingTab, openBackgroundTab, sendMessageUntilReady } from './backgroundTab'
 
 describe('backgroundTab', () => {
   afterEach(() => {
@@ -71,6 +71,59 @@ describe('backgroundTab', () => {
       await vi.advanceTimersByTimeAsync(200)
 
       await assertion
+    })
+  })
+
+  describe('findExistingTab', () => {
+    it('優先度順にURLをクエリし、最初に見つかったタブのkindとtabIdを返す', async () => {
+      const query = vi.fn().mockImplementation(async ({ url }: { url: string }) => {
+        if (url === 'https://x.com/settings/muted_keywords') return [{ id: 55 }]
+        return []
+      })
+      vi.stubGlobal('chrome', { tabs: { query } })
+
+      const result = await findExistingTab([
+        { kind: 'add', url: 'https://x.com/settings/add_muted_keyword' },
+        { kind: 'list', url: 'https://x.com/settings/muted_keywords' },
+      ])
+
+      expect(result).toEqual({ tabId: 55, kind: 'list' })
+      expect(query).toHaveBeenCalledWith({ url: 'https://x.com/settings/add_muted_keyword' })
+      expect(query).toHaveBeenCalledWith({ url: 'https://x.com/settings/muted_keywords' })
+    })
+
+    it('複数のkindに一致するタブがある場合は入力順で最初のkindを優先する', async () => {
+      const query = vi.fn().mockResolvedValue([{ id: 1 }])
+      vi.stubGlobal('chrome', { tabs: { query } })
+
+      const result = await findExistingTab([
+        { kind: 'add', url: 'https://x.com/settings/add_muted_keyword' },
+        { kind: 'list', url: 'https://x.com/settings/muted_keywords' },
+      ])
+
+      expect(result).toEqual({ tabId: 1, kind: 'add' })
+    })
+
+    it('一致するタブがなければnullを返す', async () => {
+      const query = vi.fn().mockResolvedValue([])
+      vi.stubGlobal('chrome', { tabs: { query } })
+
+      const result = await findExistingTab([
+        { kind: 'add', url: 'https://x.com/settings/add_muted_keyword' },
+      ])
+
+      expect(result).toBeNull()
+    })
+
+    it('idが未定義のタブは無視する', async () => {
+      const query = vi.fn().mockResolvedValue([{}])
+      vi.stubGlobal('chrome', { tabs: { query } })
+
+      const result = await findExistingTab([
+        { kind: 'add', url: 'https://x.com/settings/add_muted_keyword' },
+      ])
+
+      expect(result).toBeNull()
     })
   })
 })

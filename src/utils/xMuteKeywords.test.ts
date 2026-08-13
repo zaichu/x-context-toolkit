@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { ADD_MUTE_KEYWORDS_URL, addMuteKeywordToX, fillMuteKeywordForm } from './xMuteKeywords'
+import {
+  ADD_MUTE_KEYWORDS_URL,
+  MUTED_KEYWORDS_URL,
+  addMuteKeywordToX,
+  fillMuteKeywordForm,
+  isMuteKeywordsListPage,
+  prepareAndFillMuteKeywordForm,
+} from './xMuteKeywords'
 
 // jsdomはレイアウトを計算しないため、offsetParentは明示的に与えないと常にnullになる
 const makeVisible = (element: HTMLElement): void => {
@@ -28,15 +35,18 @@ const RECEIVING_END_MISSING = new Error('Could not establish connection. Receivi
 const stubChrome = (overrides: {
   sendMessage: ReturnType<typeof vi.fn>
   remove?: ReturnType<typeof vi.fn>
+  query?: ReturnType<typeof vi.fn>
 }) => {
   const create = vi.fn().mockResolvedValue({ id: TAB_ID })
   const remove = overrides.remove ?? vi.fn().mockResolvedValue(undefined)
+  // 既定では既存タブなし（=常に新規タブ方式へフォールバック）とする
+  const query = overrides.query ?? vi.fn().mockResolvedValue([])
 
   vi.stubGlobal('chrome', {
-    tabs: { create, sendMessage: overrides.sendMessage, remove },
+    tabs: { create, sendMessage: overrides.sendMessage, remove, query },
   })
 
-  return { create, sendMessage: overrides.sendMessage, remove }
+  return { create, sendMessage: overrides.sendMessage, remove, query }
 }
 
 describe('addMuteKeywordToX', () => {
@@ -180,8 +190,221 @@ describe('addMuteKeywordToX', () => {
       /tabCreated=\d+ contentReady=\d+ inputFound=\d+ saveClicked=\d+ settled=\d+ total=\d+/,
     )
     expect(loggedLine).not.toContain('ひみつのキーワード')
+    expect(loggedLine).toContain('reusedTab=false')
 
     consoleInfoSpy.mockRestore()
+  })
+
+  it('既存のadd_muted_keywordタブがあれば新規タブを作らずそのタブへ送信し、閉じない', async () => {
+    const query = vi.fn().mockImplementation(async ({ url }: { url: string }) => {
+      if (url === ADD_MUTE_KEYWORDS_URL) return [{ id: 900 }]
+      return []
+    })
+    const sendMessage = vi.fn().mockResolvedValue({ success: true })
+    const { create, remove } = stubChrome({ sendMessage, query })
+
+    const result = await addMuteKeywordToX('テスト')
+
+    expect(result).toBe(true)
+    expect(create).not.toHaveBeenCalled()
+    expect(sendMessage).toHaveBeenCalledWith(900, { action: 'fillMuteKeyword', keyword: 'テスト' })
+    expect(remove).not.toHaveBeenCalled()
+  })
+
+  it('既存のmuted_keywordsタブしかない場合はprepareAndFillMuteKeywordを送り、閉じない', async () => {
+    const query = vi.fn().mockImplementation(async ({ url }: { url: string }) => {
+      if (url === MUTED_KEYWORDS_URL) return [{ id: 901 }]
+      return []
+    })
+    const sendMessage = vi.fn().mockResolvedValue({ success: true })
+    const { create, remove } = stubChrome({ sendMessage, query })
+
+    const result = await addMuteKeywordToX('テスト')
+
+    expect(result).toBe(true)
+    expect(create).not.toHaveBeenCalled()
+    expect(sendMessage).toHaveBeenCalledWith(901, { action: 'prepareAndFillMuteKeyword', keyword: 'テスト' })
+    expect(remove).not.toHaveBeenCalled()
+  })
+
+  it('add_muted_keywordとmuted_keywordsの両方が存在する場合はadd_muted_keywordを優先する', async () => {
+    const query = vi.fn().mockImplementation(async ({ url }: { url: string }) => {
+      if (url === ADD_MUTE_KEYWORDS_URL) return [{ id: 900 }]
+      if (url === MUTED_KEYWORDS_URL) return [{ id: 901 }]
+      return []
+    })
+    const sendMessage = vi.fn().mockResolvedValue({ success: true })
+    stubChrome({ sendMessage, query })
+
+    await addMuteKeywordToX('テスト')
+
+    expect(sendMessage).toHaveBeenCalledWith(900, { action: 'fillMuteKeyword', keyword: 'テスト' })
+  })
+
+  it('既存タブ内のフォーム処理自体が失敗した場合は二重登録を避けるため新規タブへ再試行しない', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const query = vi.fn().mockImplementation(async ({ url }: { url: string }) => {
+      if (url === ADD_MUTE_KEYWORDS_URL) return [{ id: 900 }]
+      return []
+    })
+    const sendMessage = vi.fn().mockResolvedValue({ success: false })
+    const { create, remove } = stubChrome({ sendMessage, query })
+
+    const result = await addMuteKeywordToX('テスト')
+
+    expect(result).toBe(false)
+    expect(create).not.toHaveBeenCalled()
+    expect(remove).not.toHaveBeenCalled()
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+
+    consoleErrorSpy.mockRestore()
+  })
+
+  it('既存タブへのメッセージ送信自体が失敗（受信不能）した場合は新規タブ方式へフォールバックする', async () => {
+    const query = vi.fn().mockImplementation(async ({ url }: { url: string }) => {
+      if (url === ADD_MUTE_KEYWORDS_URL) return [{ id: 900 }]
+      return []
+    })
+    const sendMessage = vi.fn().mockImplementation(async (tabId: number) => {
+      if (tabId === 900) throw new Error('拡張機能のコンテキストが無効です')
+      return { success: true }
+    })
+    const { create, remove } = stubChrome({ sendMessage, query })
+
+    const result = await addMuteKeywordToX('テスト')
+
+    expect(result).toBe(true)
+    expect(create).toHaveBeenCalledWith({ url: ADD_MUTE_KEYWORDS_URL, active: false })
+    expect(sendMessage).toHaveBeenCalledWith(TAB_ID, { action: 'fillMuteKeyword', keyword: 'テスト' })
+    expect(remove).toHaveBeenCalledWith(TAB_ID)
+  })
+
+  it('既存タブが見つからない場合は新規タブ方式で送信する（フォールバック）', async () => {
+    const query = vi.fn().mockResolvedValue([])
+    const sendMessage = vi.fn().mockResolvedValue({ success: true })
+    const { create } = stubChrome({ sendMessage, query })
+
+    const result = await addMuteKeywordToX('テスト')
+
+    expect(result).toBe(true)
+    expect(create).toHaveBeenCalledWith({ url: ADD_MUTE_KEYWORDS_URL, active: false })
+  })
+
+  it('同時要求は同じ既存タブを直列に処理する（キューイング）', async () => {
+    const query = vi.fn().mockImplementation(async ({ url }: { url: string }) => {
+      if (url === ADD_MUTE_KEYWORDS_URL) return [{ id: 900 }]
+      return []
+    })
+    let active = 0
+    let maxActive = 0
+    const sendMessage = vi.fn().mockImplementation(async () => {
+      active++
+      maxActive = Math.max(maxActive, active)
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      active--
+      return { success: true }
+    })
+    const { create } = stubChrome({ sendMessage, query })
+
+    vi.useFakeTimers()
+    const resultsPromise = Promise.all([
+      addMuteKeywordToX('キーワードA'),
+      addMuteKeywordToX('キーワードB'),
+    ])
+    await vi.runAllTimersAsync()
+    const results = await resultsPromise
+
+    expect(results).toEqual([true, true])
+    expect(maxActive).toBe(1)
+    expect(create).not.toHaveBeenCalled()
+    expect(sendMessage).toHaveBeenCalledTimes(2)
+  })
+
+  it('既存タブ再利用時はtimingsログへreusedTab=trueを出す（キーワード本文は含めない）', async () => {
+    const query = vi.fn().mockImplementation(async ({ url }: { url: string }) => {
+      if (url === ADD_MUTE_KEYWORDS_URL) return [{ id: 900 }]
+      return []
+    })
+    const sendMessage = vi.fn().mockResolvedValue({
+      success: true,
+      timings: { inputFoundMs: 1, saveClickedMs: 2, settledMs: 3 },
+    })
+    stubChrome({ sendMessage, query })
+    const consoleInfoSpy = vi.spyOn(console, 'info').mockImplementation(() => {})
+
+    await addMuteKeywordToX('ひみつのキーワード')
+
+    const loggedLine = consoleInfoSpy.mock.calls[0][0] as string
+    expect(loggedLine).toContain('reusedTab=true')
+    expect(loggedLine).not.toContain('ひみつのキーワード')
+
+    consoleInfoSpy.mockRestore()
+  })
+})
+
+describe('isMuteKeywordsListPage', () => {
+  const originalLocation = window.location
+
+  afterEach(() => {
+    Object.defineProperty(window, 'location', { value: originalLocation, configurable: true, writable: true })
+  })
+
+  const setHref = (href: string) => {
+    Object.defineProperty(window, 'location', { value: { href }, configurable: true, writable: true })
+  }
+
+  it('URLがミュートキーワード一覧ページなら true を返す', () => {
+    setHref(MUTED_KEYWORDS_URL)
+    expect(isMuteKeywordsListPage()).toBe(true)
+  })
+
+  it('URLがミュートキーワード一覧ページでなければ false を返す', () => {
+    setHref(ADD_MUTE_KEYWORDS_URL)
+    expect(isMuteKeywordsListPage()).toBe(false)
+  })
+})
+
+describe('prepareAndFillMuteKeywordForm', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    document.body.innerHTML = ''
+  })
+
+  const ADD_LINK_SELECTOR_TEXT = 'ミュートする単語またはフレーズを追加'
+
+  it('追加リンクをクリックしてからフォームへ入力する', async () => {
+    document.body.innerHTML = `<a aria-label="${ADD_LINK_SELECTOR_TEXT}" href="/settings/add_muted_keyword">追加</a>`
+    const link = document.querySelector('a') as HTMLAnchorElement
+    let clicked = false
+    link.addEventListener('click', (event) => {
+      // jsdomは実ナビゲーションを実装していないため、SPA遷移を模すのみでデフォルト動作は止める
+      event.preventDefault()
+      clicked = true
+      // SPA遷移によりフォームが後から出現する様子を再現
+      const { input, button } = renderMuteKeywordForm()
+      void input
+      void button
+    })
+
+    vi.useFakeTimers()
+    const resultPromise = prepareAndFillMuteKeywordForm('テスト')
+    await vi.runAllTimersAsync()
+    const result = await resultPromise
+
+    expect(clicked).toBe(true)
+    expect(result.success).toBe(true)
+  })
+
+  it('追加リンクが見つからない場合はsuccess:falseで解決する', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+
+    vi.useFakeTimers()
+    const resultPromise = prepareAndFillMuteKeywordForm('テスト')
+    await vi.runAllTimersAsync()
+    const result = await resultPromise
+
+    expect(result.success).toBe(false)
+    consoleErrorSpy.mockRestore()
   })
 })
 
