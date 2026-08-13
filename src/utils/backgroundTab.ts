@@ -8,30 +8,40 @@ export const openBackgroundTab = async (url: string): Promise<number> => {
   return tab.id
 }
 
-export const waitForTabLoad = (tabId: number, timeoutMs = 30_000): Promise<void> =>
-  new Promise((resolve, reject) => {
-    let settled = false
-    const finish = (error?: Error) => {
-      if (settled) return
-      settled = true
-      clearTimeout(timeout)
-      chrome.tabs.onUpdated.removeListener(listener)
-      if (error) {
-        reject(error)
-      } else {
-        resolve()
-      }
-    }
-    const listener = (changedTabId: number, changeInfo: chrome.tabs.TabChangeInfo) => {
-      if (changedTabId === tabId && changeInfo.status === 'complete') finish()
-    }
-    const timeout = setTimeout(() => finish(new Error('X設定画面の読み込みがタイムアウトしました')), timeoutMs)
+// タブ作成直後はコンテンツスクリプトがまだ読み込まれておらず、
+// sendMessageは「受信先未準備」エラーになりうる。そのエラーだけを短い間隔で再試行し、
+// 受信可能になった時点ですぐに処理を始める（読み込み完了を待ってから送るより速い）。
+const RECEIVING_END_MISSING_MESSAGE = 'Could not establish connection. Receiving end does not exist.'
 
-    chrome.tabs.get(tabId).then((tab) => {
-      if (tab.status === 'complete') finish()
-      else chrome.tabs.onUpdated.addListener(listener)
-    }).catch(() => chrome.tabs.onUpdated.addListener(listener))
-  })
+const isReceivingEndMissingError = (error: unknown): boolean => {
+  const message = error instanceof Error ? error.message : String(error)
+  return message.includes(RECEIVING_END_MISSING_MESSAGE)
+}
+
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
+
+export const sendMessageUntilReady = async <T>(
+  tabId: number,
+  message: unknown,
+  options: { intervalMs?: number; timeoutMs?: number } = {},
+): Promise<T> => {
+  const { intervalMs = 50, timeoutMs = 15_000 } = options
+  const startedAt = Date.now()
+
+  for (; ;) {
+    try {
+      return await chrome.tabs.sendMessage(tabId, message) as T
+    } catch (error) {
+      if (!isReceivingEndMissingError(error)) {
+        throw error
+      }
+      if (Date.now() - startedAt >= timeoutMs) {
+        throw new Error('X設定画面のコンテンツスクリプトが応答しませんでした')
+      }
+      await sleep(intervalMs)
+    }
+  }
+}
 
 export const closeBackgroundTab = async (tabId: number): Promise<void> => {
   try {
