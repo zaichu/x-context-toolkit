@@ -12,25 +12,25 @@
     "release": "npm run build && python3 scripts/build-release.py"
   },
   "dependencies": {
-    "react": "^19.1.1",
-    "react-dom": "^19.1.1",
-    "bootstrap": "^5.3.0"
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "bootstrap": "^5.3.8"
   },
   "devDependencies": {
-    "@eslint/js": "^9.33.0",
-    "@types/chrome": "^0.1.4",
-    "@types/react": "^19.1.10",
-    "@types/react-dom": "^19.1.7",
-    "@vitejs/plugin-react": "^5.0.0",
-    "@crxjs/vite-plugin": "^2.0.0-beta.23",
-    "eslint": "^9.33.0",
+    "@eslint/js": "^9.39.5",
+    "@types/chrome": "^0.1.43",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^5.2.0",
+    "@crxjs/vite-plugin": "^2.7.1",
+    "eslint": "^9.39.5",
     "eslint-plugin-react-hooks": "^5.2.0",
-    "eslint-plugin-react-refresh": "^0.4.20",
-    "globals": "^16.3.0",
+    "eslint-plugin-react-refresh": "^0.4.26",
+    "globals": "^16.5.0",
     "jsdom": "^25.0.1",
     "typescript": "5.9.2",
-    "typescript-eslint": "^8.39.1",
-    "vite": "^7.1.2",
+    "typescript-eslint": "^8.71.1",
+    "vite": "^7.3.7",
     "vitest": "^2.1.9"
   }
 }
