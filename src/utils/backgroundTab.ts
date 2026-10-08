@@ -37,7 +37,7 @@ export const sendMessageUntilReady = async <T>(
         throw error
       }
       if (Date.now() - startedAt >= timeoutMs) {
-        throw new Error('X設定画面のコンテンツスクリプトが応答しませんでした')
+        throw new Error('X設定画面のコンテンツスクリプトが応答しませんでした', { cause: error })
       }
       await sleep(intervalMs)
     }
