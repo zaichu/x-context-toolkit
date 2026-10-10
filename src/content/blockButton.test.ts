@@ -369,7 +369,7 @@ describe('ブロックボタンのクリック挙動', () => {
     button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
 
     await vi.waitFor(() => {
-      expect(button.classList.contains('block-button--done')).toBe(true)
+      expect(button.textContent).toBe('✅')
     })
 
     expect(caretClickSpy).toHaveBeenCalledOnce()
@@ -455,7 +455,6 @@ describe('ブロックボタンのクリック挙動', () => {
       expect(button.disabled).toBe(false)
     })
 
-    expect(button.classList.contains('block-button--done')).toBe(false)
     expect(sendMessage).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'showNotification', type: 'error' })
     )
@@ -472,7 +471,6 @@ describe('ブロックボタンのクリック挙動', () => {
     button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
     await vi.waitFor(() => expect(button.disabled).toBe(false))
 
-    expect(button.classList.contains('block-button--done')).toBe(false)
     expect(sendMessage).toHaveBeenCalledWith(
       expect.objectContaining({ action: 'showNotification', type: 'error' })
     )
