@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """Chrome Web Store掲載画像を外部素材なしで生成する。"""
 
+import json
 from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 ROOT = Path(__file__).resolve().parents[1]
+VERSION = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))["version"]
 OUT = ROOT / "store-assets"
 SHOT = OUT / "screenshots"
 PROMO = OUT / "promotional"
@@ -57,7 +59,7 @@ def popup_card(draw, x, y):
     draw.text((x+26, y+24), "Xにミュートキーワードを追加", font=font(23, True), fill="#0f1419")
     draw.text((x+26, y+62), "ワンクリックブロック対応版", font=font(14), fill="#536471")
     rounded(draw, (x+332, y+25, x+399, y+51), 12, "#202327")
-    draw.text((x+343, y+29), "v1.0.11", font=font(12, True), fill="white")
+    draw.text((x+343, y+29), f"v{VERSION}", font=font(12, True), fill="white")
     draw.line((x+26, y+93, x+404, y+93), fill="#cfd9de", width=1)
     rounded(draw, (x+26, y+122, x+309, y+174), 8, "white", "#8b98a5", 2)
     draw.text((x+43, y+137), "おすすめ欄", font=font(17), fill="#536471")
