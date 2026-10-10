@@ -27,6 +27,9 @@ export interface SaveTimings {
 
 interface FillMuteKeywordResponse {
   success: boolean
+  // 保存を要求したが完了の兆候を確認できなかった場合のみtrue。
+  // 保存自体は成功している可能性があるため、フォーム処理の失敗とは区別する
+  unconfirmed?: boolean
   timings?: SaveTimings
 }
 
@@ -65,15 +68,22 @@ const requestFillMuteKeyword = async (
   return result
 }
 
+// 送信済みメッセージへの応答が期限までに返らなかったことを示す。
+// コンテンツスクリプト側で処理が継続している可能性があり、未送達を示す送信エラーと区別する
+class ResponseTimeoutError extends Error {}
+
 type ReuseResult =
-  | { handled: true; success: boolean; timings?: SaveTimings }
+  | { handled: true; response: FillMuteKeywordResponse | undefined }
   | { handled: false }
 
 // 既存のX設定タブ（add_muted_keyword優先、次点でmuted_keywords）を再利用できるか試みる。
-// 既存タブが見つからない、またはメッセージ送信自体が届かない（受信不能・タイムアウト）場合はhandled:falseを返し、
+// 既存タブが見つからない、またはメッセージが未送達と確定できる場合のみhandled:falseを返し、
 // 呼び出し元が新規一時タブ方式へフォールバックする。
-// 一方、既存タブへメッセージは届いたがフォーム処理自体が失敗した場合はhandled:trueかつsuccess:falseを返す。
-// これは、二重登録を避けるため新規タブへの再試行をしないことを呼び出し元へ伝えるため。
+// 送信後に応答がない（応答待ち超過）場合は、コンテンツスクリプト側で処理が継続している
+// 可能性があり新規タブへの再送が二重登録になりうるため、フォールバックせず
+// 応答なし（response:undefined）の未確認として扱う。
+// フォーム処理の結果が返った場合（失敗・保存未確認を含む）も、二重登録を避けるため
+// 新規タブへの再試行をしないことを呼び出し元へ伝えるためhandled:trueを返す。
 const tryReuseExistingTab = async (keyword: string, marks: TimingMarks): Promise<ReuseResult> => {
   let existing: { tabId: number; kind: ExistingTabKind } | null
   try {
@@ -90,11 +100,13 @@ const tryReuseExistingTab = async (keyword: string, marks: TimingMarks): Promise
   const action = existing.kind === 'add_muted_keyword' ? 'fillMuteKeyword' : 'prepareAndFillMuteKeyword'
 
   try {
-    const result = await requestFillMuteKeyword(existing.tabId, action, keyword, marks)
-    return { handled: true, success: !!result?.success, timings: result?.timings }
-  } catch {
-    // 既存タブへ届かなかった（受信不能・タイムアウト）ケース。フォーム処理には至っていないため
-    // 新規タブへのフォールバックで二重登録にはならない。
+    const response = await requestFillMuteKeyword(existing.tabId, action, keyword, marks)
+    return { handled: true, response }
+  } catch (error) {
+    // 応答待ち超過はメッセージが届いた可能性があり、フォーム処理が継続しているかもしれない。
+    // 二重登録を避けるため新規タブへの再送はせず、応答なしの未確認として扱う
+    if (error instanceof ResponseTimeoutError) return { handled: true, response: undefined }
+    // 未送達（受信不能・送信エラー）と確定できる場合のみ、新規タブ方式へフォールバックする
     return { handled: false }
   }
 }
@@ -117,14 +129,13 @@ export const addMuteKeywordToX = async (keyword: string): Promise<boolean> => {
     const reuseResult = await tryReuseExistingTab(trimmedKeyword, marks)
     if (reuseResult.handled) {
       reusedTab = true
-      contentTimings = reuseResult.timings
-      if (reuseResult.success) {
+      contentTimings = reuseResult.response?.timings
+      if (reuseResult.response?.success) {
         console.log(`ミュートキーワード「${keyword}」を追加しました`)
         return true
-      } else {
-        // 既存タブ内のフォーム処理自体が失敗している。二重登録を避けるため新規タブへは再試行しない。
-        throw new Error('キーワードの入力に失敗しました')
       }
+      // 既存タブ側で失敗・未確認となった場合も二重登録を避けるため新規タブへは再試行しない
+      throw new Error(fillFailureMessage(reuseResult.response))
     }
 
     // フォーカスを奪わない非アクティブな一時タブでX公式設定画面を開く
@@ -138,7 +149,7 @@ export const addMuteKeywordToX = async (keyword: string): Promise<boolean> => {
       console.log(`ミュートキーワード「${keyword}」を追加しました`)
       return true
     } else {
-      throw new Error('キーワードの入力に失敗しました')
+      throw new Error(fillFailureMessage(result))
     }
 
   } catch (error) {
@@ -177,9 +188,16 @@ const logSaveTimings = (
   )
 }
 
+// 送信後の応答・フォーム処理・保存兆候のどこで確認を失ったかを文言で区別する
+const fillFailureMessage = (response: FillMuteKeywordResponse | undefined): string => {
+  if (response === undefined) return '応答を確認できませんでした'
+  if (response.unconfirmed) return '保存を確認できませんでした'
+  return 'キーワードの入力に失敗しました'
+}
+
 const withTimeout = <T>(promise: Promise<T>, timeoutMs: number, message: string): Promise<T> =>
   new Promise((resolve, reject) => {
-    const timeout = setTimeout(() => reject(new Error(message)), timeoutMs)
+    const timeout = setTimeout(() => reject(new ResponseTimeoutError(message)), timeoutMs)
     promise.then(
       (value) => { clearTimeout(timeout); resolve(value) },
       (error) => { clearTimeout(timeout); reject(error) },
@@ -267,18 +285,22 @@ export const fillMuteKeywordForm = async (keyword: string): Promise<FillMuteKeyw
     const tSaveClicked = performance.now()
 
     // 通信をキャンセルせず、妥当な成功の兆候（URL遷移・フォーム消失・ボタンの再有効化や消失）を有限時間待つ
-    await waitForSaveToSettle(addButton, inputField)
+    const settled = await waitForSaveToSettle(addButton, inputField)
     const tSettled = performance.now()
 
-    console.log(`ミュートキーワード「${keyword}」を入力しました`)
-    return {
-      success: true,
-      timings: {
-        inputFoundMs: tInputFound - tStart,
-        saveClickedMs: tSaveClicked - tInputFound,
-        settledMs: tSettled - tSaveClicked,
-      },
+    const timings = {
+      inputFoundMs: tInputFound - tStart,
+      saveClickedMs: tSaveClicked - tInputFound,
+      settledMs: tSettled - tSaveClicked,
     }
+    if (!settled) {
+      // 兆候を検知できなくても保存リクエスト自体は送られている可能性がある。
+      // 成功とは断定できないため、フォーム処理の失敗とは区別して「未確認」として返す
+      return { success: false, unconfirmed: true, timings }
+    }
+
+    console.log(`ミュートキーワード「${keyword}」を入力しました`)
+    return { success: true, timings }
 
   } catch (error) {
     console.error('フォーム入力エラー:', error)
@@ -400,21 +422,21 @@ const waitForAddButtonEnabled = async (): Promise<HTMLButtonElement | null> => {
 const SAVE_SETTLE_FALLBACK_TIMEOUT_MS = 500
 
 // 保存クリック後、通信をキャンセルせず、妥当な成功の兆候を有限時間待つ。
-// 次のいずれかを検知でき次第、即座に完了する:
+// 次のいずれかを検知でき次第、trueで即座に完了する:
 //   1. URLがミュートキーワード追加ページから離れた（保存後の画面遷移）
 //   2. キーワード入力欄がDOMから消えた（フォームの再描画・破棄）
 //   3. 保存ボタンがdisabledを経て再度有効化された、またはDOMから消えた
-// どれも観測できない場合でも、SAVE_SETTLE_FALLBACK_TIMEOUT_MSで必ず打ち切り、永久待機にはしない。
+// どれも観測できない場合はSAVE_SETTLE_FALLBACK_TIMEOUT_MSで打ち切りfalseを返す（永久待機にはしない）。
 const waitForSaveToSettle = async (
   button: HTMLButtonElement,
   input: HTMLInputElement,
   timeoutMs = SAVE_SETTLE_FALLBACK_TIMEOUT_MS,
-): Promise<void> => {
+): Promise<boolean> => {
   const startUrl = window.location.href
   let sawSubmitting = false
 
   // URL変更のようにMutationObserverでは拾えない変化もあるため、バックストップpoll(50ms)を維持する
-  await waitForCondition<true>(
+  const detected = await waitForCondition<true>(
     () => {
       const buttonInDom = button.isConnected
       const disabledNow = buttonInDom && button.disabled
@@ -438,4 +460,5 @@ const waitForSaveToSettle = async (
       },
     },
   )
+  return detected === true
 }
