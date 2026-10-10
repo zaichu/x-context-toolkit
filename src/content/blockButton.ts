@@ -119,8 +119,6 @@ const applyBaseButtonStyle = (button: HTMLButtonElement): void => {
 // ブロックボタンの見た目を状態ごとに更新する（disabled/processing/doneを視覚的に区別する）
 const setButtonState = (button: HTMLButtonElement, state: BlockButtonState): void => {
   button.disabled = state !== 'idle'
-  button.classList.toggle('block-button--processing', state === 'processing')
-  button.classList.toggle('block-button--done', state === 'done')
   button.textContent = state === 'done' ? '✅' : '🚫'
   button.style.opacity = state === 'idle' ? '1' : '0.6'
   button.style.cursor = state === 'idle' ? 'pointer' : 'default'

@@ -290,36 +290,6 @@ describe('addMuteKeywordToX', () => {
     expect(create).toHaveBeenCalledWith({ url: ADD_MUTE_KEYWORDS_URL, active: false })
   })
 
-  it('同時要求は同じ既存タブを直列に処理する（キューイング）', async () => {
-    const query = vi.fn().mockImplementation(async ({ url }: { url: string }) => {
-      if (url === ADD_MUTE_KEYWORDS_URL) return [{ id: 900 }]
-      return []
-    })
-    let active = 0
-    let maxActive = 0
-    const sendMessage = vi.fn().mockImplementation(async () => {
-      active++
-      maxActive = Math.max(maxActive, active)
-      await new Promise((resolve) => setTimeout(resolve, 20))
-      active--
-      return { success: true }
-    })
-    const { create } = stubChrome({ sendMessage, query })
-
-    vi.useFakeTimers()
-    const resultsPromise = Promise.all([
-      addMuteKeywordToX('キーワードA'),
-      addMuteKeywordToX('キーワードB'),
-    ])
-    await vi.runAllTimersAsync()
-    const results = await resultsPromise
-
-    expect(results).toEqual([true, true])
-    expect(maxActive).toBe(1)
-    expect(create).not.toHaveBeenCalled()
-    expect(sendMessage).toHaveBeenCalledTimes(2)
-  })
-
   it('既存タブ再利用時はtimingsログへreusedTab=trueを出す（キーワード本文は含めない）', async () => {
     const query = vi.fn().mockImplementation(async ({ url }: { url: string }) => {
       if (url === ADD_MUTE_KEYWORDS_URL) return [{ id: 900 }]

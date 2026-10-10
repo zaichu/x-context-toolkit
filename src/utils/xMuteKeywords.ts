@@ -32,24 +32,37 @@ interface FillMuteKeywordResponse {
 
 type ExistingTabKind = 'add_muted_keyword' | 'muted_keywords'
 
-// 既存タブ再利用経路の直列化用キュー。
-// 同時に複数呼ばれた場合でも同じ既存タブへ同時に送信しないよう、
-// 「既存タブを探す〜応答を受け取る」までを1本のキューで直列実行する。
-// （新規一時タブ方式は呼び出しごとに独立したタブを使うため対象外）
-let reuseQueue: Promise<unknown> = Promise.resolve()
-const runExclusive = <T>(task: () => Promise<T>): Promise<T> => {
-  const run = reuseQueue.then(task, task)
-  reuseQueue = run.then(
-    () => undefined,
-    () => undefined,
-  )
-  return run
-}
-
 interface TimingMarks {
   tabCreated?: number
   contentReady?: number
   responded?: number
+}
+
+// コンテンツスクリプトへキーワード入力を要求し、応答を待つ共通処理。
+// 接続確立（受信先未準備エラーの再試行）と応答待ちで別々のタイムアウトを設ける。
+const requestFillMuteKeyword = async (
+  tabId: number,
+  action: 'fillMuteKeyword' | 'prepareAndFillMuteKeyword',
+  keyword: string,
+  marks: TimingMarks,
+): Promise<FillMuteKeywordResponse> => {
+  const result = await withTimeout(
+    sendMessageUntilReady<FillMuteKeywordResponse>(
+      tabId,
+      { action, keyword },
+      {
+        intervalMs: CONNECT_INTERVAL_MS,
+        timeoutMs: CONNECT_TIMEOUT_MS,
+        // 成功した（=受信先未準備エラーにならなかった）試行の直前時刻を、
+        // コンテンツスクリプトが応答可能になった目安として記録する
+        onAttempt: () => { marks.contentReady = performance.now() },
+      },
+    ),
+    RESPONSE_TIMEOUT_MS,
+    'X設定画面からの応答がタイムアウトしました',
+  )
+  marks.responded = performance.now()
+  return result
 }
 
 type ReuseResult =
@@ -61,48 +74,33 @@ type ReuseResult =
 // 呼び出し元が新規一時タブ方式へフォールバックする。
 // 一方、既存タブへメッセージは届いたがフォーム処理自体が失敗した場合はhandled:trueかつsuccess:falseを返す。
 // これは、二重登録を避けるため新規タブへの再試行をしないことを呼び出し元へ伝えるため。
-const tryReuseExistingTab = (keyword: string, marks: TimingMarks): Promise<ReuseResult> =>
-  runExclusive(async () => {
-    let existing: { tabId: number; kind: ExistingTabKind } | null
-    try {
-      existing = await findExistingTab<ExistingTabKind>([
-        { kind: 'add_muted_keyword', url: ADD_MUTE_KEYWORDS_URL },
-        { kind: 'muted_keywords', url: MUTED_KEYWORDS_URL },
-      ])
-    } catch {
-      return { handled: false }
-    }
-    if (!existing) return { handled: false }
+const tryReuseExistingTab = async (keyword: string, marks: TimingMarks): Promise<ReuseResult> => {
+  let existing: { tabId: number; kind: ExistingTabKind } | null
+  try {
+    existing = await findExistingTab<ExistingTabKind>([
+      { kind: 'add_muted_keyword', url: ADD_MUTE_KEYWORDS_URL },
+      { kind: 'muted_keywords', url: MUTED_KEYWORDS_URL },
+    ])
+  } catch {
+    return { handled: false }
+  }
+  if (!existing) return { handled: false }
 
-    marks.tabCreated = performance.now()
-    const action = existing.kind === 'add_muted_keyword' ? 'fillMuteKeyword' : 'prepareAndFillMuteKeyword'
+  marks.tabCreated = performance.now()
+  const action = existing.kind === 'add_muted_keyword' ? 'fillMuteKeyword' : 'prepareAndFillMuteKeyword'
 
-    try {
-      const result = await withTimeout(
-        sendMessageUntilReady<FillMuteKeywordResponse>(
-          existing.tabId,
-          { action, keyword },
-          {
-            intervalMs: CONNECT_INTERVAL_MS,
-            timeoutMs: CONNECT_TIMEOUT_MS,
-            onAttempt: () => { marks.contentReady = performance.now() },
-          },
-        ),
-        RESPONSE_TIMEOUT_MS,
-        'X設定画面からの応答がタイムアウトしました',
-      )
-      marks.responded = performance.now()
-      return { handled: true, success: !!result?.success, timings: result?.timings }
-    } catch {
-      // 既存タブへ届かなかった（受信不能・タイムアウト）ケース。フォーム処理には至っていないため
-      // 新規タブへのフォールバックで二重登録にはならない。
-      return { handled: false }
-    }
-  })
+  try {
+    const result = await requestFillMuteKeyword(existing.tabId, action, keyword, marks)
+    return { handled: true, success: !!result?.success, timings: result?.timings }
+  } catch {
+    // 既存タブへ届かなかった（受信不能・タイムアウト）ケース。フォーム処理には至っていないため
+    // 新規タブへのフォールバックで二重登録にはならない。
+    return { handled: false }
+  }
+}
 
 // ミュートキーワードを追加する関数
-// 既存のX設定タブ（再利用経路）はキューで直列化しているが、新規一時タブ方式の呼び出し同士は
-// 互いに独立（tabId・計測値はすべてローカル変数）なため、同時に複数回呼ばれても競合しない。
+// 同時実行の直列化は呼び出し元（Service WorkerのmuteQueue）が担う前提で、ここでは持たない。
 export const addMuteKeywordToX = async (keyword: string): Promise<boolean> => {
   let tabId: number | null = null
   const t0 = performance.now()
@@ -133,23 +131,7 @@ export const addMuteKeywordToX = async (keyword: string): Promise<boolean> => {
     tabId = await openBackgroundTab(ADD_MUTE_KEYWORDS_URL)
     marks.tabCreated = performance.now()
 
-    // タブ読み込み完了を待たず、作成直後から短い間隔でコンテンツスクリプトへ送信を再試行する
-    const result = await withTimeout(
-      sendMessageUntilReady<FillMuteKeywordResponse>(
-        tabId,
-        { action: 'fillMuteKeyword', keyword: trimmedKeyword },
-        {
-          intervalMs: CONNECT_INTERVAL_MS,
-          timeoutMs: CONNECT_TIMEOUT_MS,
-          // 成功した（=受信先未準備エラーにならなかった）試行の直前時刻を、
-          // コンテンツスクリプトが応答可能になった目安として記録する
-          onAttempt: () => { marks.contentReady = performance.now() },
-        },
-      ),
-      RESPONSE_TIMEOUT_MS,
-      'X設定画面からの応答がタイムアウトしました',
-    )
-    marks.responded = performance.now()
+    const result = await requestFillMuteKeyword(tabId, 'fillMuteKeyword', trimmedKeyword, marks)
     contentTimings = result?.timings
 
     if (result?.success) {
@@ -251,14 +233,8 @@ const waitForAddKeywordLink = async (): Promise<HTMLAnchorElement | null> => {
 const SELECTORS = {
   // キーワード入力フィールド
   keywordInput: 'input[name="keyword"]',
-  // キーワード入力フィールド（代替）
-  keywordInputAlt: 'input[placeholder*="キーワード"], input[placeholder*="keyword"]',
   // 追加ボタン
   addButton: 'button[data-testid="settingsDetailSave"]',
-  // 追加ボタン（代替）
-  addButtonAlt: 'button[type="submit"], button:contains("追加")',
-  // フォーム
-  form: 'form',
   // メインコンテナ
   container: '[data-testid="primaryColumn"]'
 }
@@ -333,20 +309,10 @@ const waitForElements = async (): Promise<void> => {
   if (!found) throw new Error('ミュートキーワード入力欄が見つかりませんでした')
 }
 
-// キーワード入力フィールドを検索
+// キーワード入力フィールドを検索（表示されている要素のみ）
 const findKeywordInput = (): HTMLInputElement | null => {
-  const selectors = [
-    SELECTORS.keywordInput
-  ]
-
-  for (const selector of selectors) {
-    const element = document.querySelector(selector) as HTMLInputElement
-    if (element && element.offsetParent) { // 表示されている要素のみ
-      return element
-    }
-  }
-
-  return null
+  const element = document.querySelector(SELECTORS.keywordInput) as HTMLInputElement | null
+  return element && element.offsetParent ? element : null
 }
 
 // 表示中かつ有効（disabled/aria-disabled="true"でない）ボタンか
