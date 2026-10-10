@@ -54,7 +54,12 @@ const respondFillKeyword = async (
       console.log(`ミュートキーワード「${keyword}」を入力しました`)
       sendResponse({ success: true, timings: result.timings })
     } else {
-      sendResponse({ success: false, error: 'フォームの入力に失敗しました' })
+      sendResponse({
+        success: false,
+        unconfirmed: result.unconfirmed,
+        timings: result.timings,
+        error: result.unconfirmed ? '保存の完了を確認できませんでした' : 'フォームの入力に失敗しました',
+      })
     }
   } catch (error) {
     console.error('ミュートキーワード入力エラー:', error)

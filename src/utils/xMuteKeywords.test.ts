@@ -279,6 +279,30 @@ describe('addMuteKeywordToX', () => {
     expect(remove).toHaveBeenCalledWith(TAB_ID)
   })
 
+  it('既存タブからの応答がタイムアウトした場合は新規タブへ再送せず、未確認としてfalseで解決する', async () => {
+    const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const query = vi.fn().mockImplementation(async ({ url }: { url: string }) => {
+      if (url === ADD_MUTE_KEYWORDS_URL) return [{ id: 900 }]
+      return []
+    })
+    // コンテンツスクリプトが応答しない（sendMessageが解決しない）ケース。
+    // 既存タブ内で処理が継続している可能性があるため、新規タブへの再送は二重登録になりうる
+    const sendMessage = vi.fn().mockReturnValue(new Promise(() => {}))
+    const { create, remove } = stubChrome({ sendMessage, query })
+
+    vi.useFakeTimers()
+    const resultPromise = addMuteKeywordToX('テスト')
+    await vi.runAllTimersAsync()
+    const result = await resultPromise
+
+    expect(result).toBe(false)
+    expect(sendMessage).toHaveBeenCalledTimes(1)
+    expect(create).not.toHaveBeenCalled()
+    expect(remove).not.toHaveBeenCalled()
+
+    consoleErrorSpy.mockRestore()
+  })
+
   it('既存タブが見つからない場合は新規タブ方式で送信する（フォールバック）', async () => {
     const query = vi.fn().mockResolvedValue([])
     const sendMessage = vi.fn().mockResolvedValue({ success: true })
@@ -362,7 +386,8 @@ describe('prepareAndFillMuteKeywordForm', () => {
     const result = await resultPromise
 
     expect(clicked).toBe(true)
-    expect(result.success).toBe(true)
+    // jsdomでは保存ボタンに反応するX側JSが存在せず成功の兆候を検知できないため、保存は未確認となる
+    expect(result).toMatchObject({ success: false, unconfirmed: true })
   })
 
   it('追加リンクが見つからない場合はsuccess:falseで解決する', async () => {
@@ -399,7 +424,8 @@ describe('fillMuteKeywordForm', () => {
     expect(input.value).toBe('テストキーワード')
     expect(inputEvents).toBe(1)
     expect(changeEvents).toBe(1)
-    expect(result.success).toBe(true)
+    // jsdomではクリックに反応するX側JSがないため保存の兆候を検知できず、未確認となる
+    expect(result).toMatchObject({ success: false, unconfirmed: true })
   })
 
   it('保存ボタンが有効になるまで条件待ちしてからクリックする（固定スリープではない）', async () => {
@@ -422,7 +448,8 @@ describe('fillMuteKeywordForm', () => {
     const result = await resultPromise
 
     expect(clicked).toBe(true)
-    expect(result.success).toBe(true)
+    // jsdomではクリック後に兆候が起きないため保存は未確認となる
+    expect(result).toMatchObject({ success: false, unconfirmed: true })
   })
 
   it('保存後は妥当な成功の兆候（ボタンの再有効化）を検知し次第完了し、固定1000ms待機をしない', async () => {
@@ -487,7 +514,7 @@ describe('fillMuteKeywordForm', () => {
     expect(result.success).toBe(true)
   })
 
-  it('【仮説再現】保存後に成功の兆候(disabled再有効化・URL遷移・フォーム消失)を何も検知できない実機ケースでも、3秒ではなく短い猶予で完了する', async () => {
+  it('【仮説再現】保存後に成功の兆候(disabled再有効化・URL遷移・フォーム消失)を何も検知できない実機ケースでは、短い猶予で「保存未確認」として完了する', async () => {
     const { button } = renderMuteKeywordForm()
     // 実機のXでは保存クリックしてもbutton.disabledがトグルされないケースがあり、
     // その場合sawSubmittingが立たず、waitForSaveToSettleは兆候を一切検知できない。
@@ -503,7 +530,8 @@ describe('fillMuteKeywordForm', () => {
     expect(resolved).toBe(true)
 
     const result = await resultPromise
-    expect(result.success).toBe(true)
+    // 暗黙に成功扱いせず、フォーム処理の失敗とは区別して「未確認」を返す
+    expect(result).toMatchObject({ success: false, unconfirmed: true })
   })
 
   it('保存ボタンが見つからない場合はsuccess:falseで解決する', async () => {
@@ -550,7 +578,8 @@ describe('fillMuteKeywordForm', () => {
 
     expect(decoyClicked).toBe(false)
     expect(formButtonClicked).toBe(true)
-    expect(result.success).toBe(true)
+    // jsdomではクリック後に兆候が起きないため保存は未確認となる
+    expect(result).toMatchObject({ success: false, unconfirmed: true })
   })
 
   it('keyword inputと同じform内のbutton[type="submit"]は英語ラベルSaveでも検出してクリックする', async () => {
@@ -577,6 +606,7 @@ describe('fillMuteKeywordForm', () => {
     const result = await resultPromise
 
     expect(clicked).toBe(true)
-    expect(result.success).toBe(true)
+    // jsdomではクリック後に兆候が起きないため保存は未確認となる
+    expect(result).toMatchObject({ success: false, unconfirmed: true })
   })
 })
