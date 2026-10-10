@@ -1,6 +1,7 @@
 // ポップアップメインコンポーネント
 import React, { useState } from 'react'
 import { enqueueMuteKeyword } from './enqueueMuteKeyword'
+import { MAX_KEYWORD_LENGTH } from '../background/muteQueue'
 
 type Status = 'idle' | 'submitting' | 'accepted' | 'error'
 
@@ -60,7 +61,7 @@ export const Popup: React.FC = () => {
       <form onSubmit={handleSubmit} className="mb-3">
         <div className="input-group">
           <input type="text" className="form-control" placeholder="ミュートするキーワードを入力..."
-            value={keyword} onChange={(e) => setKeyword(e.target.value)} maxLength={100}
+            value={keyword} onChange={(e) => setKeyword(e.target.value)} maxLength={MAX_KEYWORD_LENGTH}
             disabled={isSubmitting} />
           <button type="submit" className="btn btn-primary" disabled={!keyword.trim() || isSubmitting}>
             {isSubmitting ? '追加中...' : '追加'}

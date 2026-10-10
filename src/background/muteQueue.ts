@@ -58,31 +58,21 @@ export const createMuteQueue = (deps: MuteQueueDeps): MuteQueue => {
 
     processing = true
 
-    const finish = (): void => {
+    const run = async (): Promise<void> => {
+      try {
+        if (await deps.addMuteKeywordToX(keyword)) return
+      } catch {
+        // 同期例外・rejectによる失敗もfalse返却と同じく通知へ進む
+      }
+      // 通知自体の失敗ではキューを止めない
+      await deps.notifyFailure(keyword).catch(() => {})
+    }
+
+    void run().finally(() => {
       pending.delete(keyword)
       processing = false
       processNext()
-    }
-
-    let started: Promise<boolean>
-    try {
-      started = Promise.resolve(deps.addMuteKeywordToX(keyword))
-    } catch (error) {
-      started = Promise.reject(error)
-    }
-
-    started
-      .then(
-        (success) => success,
-        () => false
-      )
-      .then(async (success) => {
-        if (!success) {
-          await deps.notifyFailure(keyword)
-        }
-      })
-      .catch(() => {})
-      .finally(finish)
+    })
   }
 
   const enqueue = (rawKeyword: string): EnqueueResult => {

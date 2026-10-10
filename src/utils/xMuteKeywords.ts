@@ -25,11 +25,13 @@ export interface SaveTimings {
   settledMs: number
 }
 
-interface FillMuteKeywordResponse {
+export interface FillMuteKeywordResponse {
   success: boolean
   // 保存を要求したが完了の兆候を確認できなかった場合のみtrue。
   // 保存自体は成功している可能性があるため、フォーム処理の失敗とは区別する
   unconfirmed?: boolean
+  // content側が付ける補足メッセージ。送信側はfillFailureMessageで文言を分けているため参照していない
+  error?: string
   timings?: SaveTimings
 }
 
@@ -127,30 +129,24 @@ export const addMuteKeywordToX = async (keyword: string): Promise<boolean> => {
     // 既存のX設定タブがあれば再利用する（cold loadの回避）。
     // 既存タブが見つからない/メッセージが届かない場合のみ新規一時タブ方式にフォールバックする。
     const reuseResult = await tryReuseExistingTab(trimmedKeyword, marks)
+    let response: FillMuteKeywordResponse | undefined
     if (reuseResult.handled) {
       reusedTab = true
-      contentTimings = reuseResult.response?.timings
-      if (reuseResult.response?.success) {
-        console.log(`ミュートキーワード「${keyword}」を追加しました`)
-        return true
-      }
-      // 既存タブ側で失敗・未確認となった場合も二重登録を避けるため新規タブへは再試行しない
-      throw new Error(fillFailureMessage(reuseResult.response))
+      response = reuseResult.response
+    } else {
+      // フォーカスを奪わない非アクティブな一時タブでX公式設定画面を開く
+      tabId = await openBackgroundTab(ADD_MUTE_KEYWORDS_URL)
+      marks.tabCreated = performance.now()
+      response = await requestFillMuteKeyword(tabId, 'fillMuteKeyword', trimmedKeyword, marks)
     }
+    contentTimings = response?.timings
 
-    // フォーカスを奪わない非アクティブな一時タブでX公式設定画面を開く
-    tabId = await openBackgroundTab(ADD_MUTE_KEYWORDS_URL)
-    marks.tabCreated = performance.now()
-
-    const result = await requestFillMuteKeyword(tabId, 'fillMuteKeyword', trimmedKeyword, marks)
-    contentTimings = result?.timings
-
-    if (result?.success) {
+    if (response?.success) {
       console.log(`ミュートキーワード「${keyword}」を追加しました`)
       return true
-    } else {
-      throw new Error(fillFailureMessage(result))
     }
+    // 既存タブ側で失敗・未確認となった場合も二重登録を避けるため、ここでは新規タブへ再試行しない
+    throw new Error(fillFailureMessage(response))
 
   } catch (error) {
     console.error('ミュートキーワード追加エラー:', error)
@@ -230,7 +226,7 @@ export const prepareAndFillMuteKeywordForm = async (keyword: string): Promise<Fi
     return { success: false }
   }
 
-  // クリック後はfillMuteKeywordFormのwaitForElementsがSPA遷移によるフォーム出現を待つ
+  // クリック後はfillMuteKeywordFormのwaitForKeywordInputがSPA遷移によるフォーム出現を待つ
   return fillMuteKeywordForm(keyword)
 }
 
@@ -261,14 +257,8 @@ const SELECTORS = {
 export const fillMuteKeywordForm = async (keyword: string): Promise<FillMuteKeywordResponse> => {
   const tStart = performance.now()
   try {
-    // ページが完全に読み込まれるまで待機
-    await waitForElements()
-
-    // キーワード入力フィールドを取得
-    const inputField = findKeywordInput()
-    if (!inputField) {
-      throw new Error('キーワード入力フィールドが見つかりません')
-    }
+    // ページが読み込まれ、キーワード入力フィールドが使えるようになるまで待機
+    const inputField = await waitForKeywordInput()
     const tInputFound = performance.now()
 
     // キーワードを一括入力
@@ -308,13 +298,13 @@ export const fillMuteKeywordForm = async (keyword: string): Promise<FillMuteKeyw
   }
 }
 
-// 要素が読み込まれるまで待機
-const waitForElements = async (): Promise<void> => {
-  const found = await waitForCondition<true>(
+// キーワード入力欄が読み込まれるまで待機し、見つかった要素を返す
+const waitForKeywordInput = async (): Promise<HTMLInputElement> => {
+  const input = await waitForCondition<HTMLInputElement>(
+    // 表示中かつdisabledでない、より厳密な条件でチェック
     () => {
       const keywordInput = findKeywordInput()
-      // より厳密な条件でチェック
-      return keywordInput && keywordInput.offsetParent && !keywordInput.disabled ? true : undefined
+      return keywordInput && !keywordInput.disabled ? keywordInput : undefined
     },
     {
       timeoutMs: 15_000,
@@ -328,7 +318,8 @@ const waitForElements = async (): Promise<void> => {
       },
     },
   )
-  if (!found) throw new Error('ミュートキーワード入力欄が見つかりませんでした')
+  if (!input) throw new Error('ミュートキーワード入力欄が見つかりませんでした')
+  return input
 }
 
 // キーワード入力フィールドを検索（表示されている要素のみ）
