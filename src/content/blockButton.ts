@@ -11,8 +11,6 @@ const AUTHOR_LINK_SELECTORS = [
   '[data-testid="User-Name"] a[href]',
 ]
 
-const toAbsoluteProfileUrl = (href: string): string => new URL(href, 'https://x.com').toString()
-
 // article内のプロフィールリンクから投稿者usernameを抽出する（引用ポストなど別articleのリンクは除外）
 export const extractTweetAuthorUsername = (article: HTMLElement): string | null => {
   for (const selector of AUTHOR_LINK_SELECTORS) {
@@ -27,7 +25,7 @@ export const extractTweetAuthorUsername = (article: HTMLElement): string | null 
         continue
       }
 
-      const username = extractUsernameFromProfileUrl(toAbsoluteProfileUrl(href))
+      const username = extractUsernameFromProfileUrl(href)
       if (username) {
         return username
       }
@@ -47,7 +45,7 @@ export const getCurrentUsername = (): string | null => {
     return null
   }
 
-  return extractUsernameFromProfileUrl(toAbsoluteProfileUrl(href))
+  return extractUsernameFromProfileUrl(href)
 }
 
 // 対象articleに属するcaret（その他）メニューボタンを検索する
@@ -126,7 +124,7 @@ const setButtonState = (button: HTMLButtonElement, state: BlockButtonState): voi
 
 // 失敗を拡張機能の通知として表示する
 const notifyFailure = (message: string): void => {
-  void chrome.runtime.sendMessage({ action: 'showNotification', message, type: 'error' })
+  void chrome.runtime.sendMessage({ action: 'notifyFailure', message })
 }
 
 // ブロックボタンのクリックハンドラ
