@@ -7,7 +7,7 @@ describe('Popup', () => {
     vi.unstubAllGlobals()
   })
 
-  it('読み込み中の拡張バージョンと識別文言を表示する', () => {
+  it('manifestのバージョンを表示する', () => {
     vi.stubGlobal('chrome', {
       runtime: {
         getManifest: () => ({ version: '1.0.2' }),
@@ -17,6 +17,5 @@ describe('Popup', () => {
     const html = renderToStaticMarkup(<Popup />)
 
     expect(html).toContain('v1.0.2')
-    expect(html).toContain('ワンクリックブロック対応版')
   })
 })

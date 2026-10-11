@@ -1,5 +1,12 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { EnqueueResult } from '../background/muteQueue'
 import { enqueueMuteKeyword } from './enqueueMuteKeyword'
+
+const createDeferred = <T>() => {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((r) => { resolve = r })
+  return { promise, resolve }
+}
 
 describe('enqueueMuteKeyword', () => {
   afterEach(() => {
@@ -22,18 +29,24 @@ describe('enqueueMuteKeyword', () => {
     await expect(enqueueMuteKeyword('テスト')).resolves.toEqual({ accepted: true, deduplicated: true })
   })
 
-  it('受付応答は100ms未満で解決する（X側への保存完了を別途待たない）', async () => {
-    // sendMessageの解決＝「検証・キュー投入が済んだ」という受付のみを表し、
-    // Xへの保存が完了するまでの実処理は別途待たない設計であることを、
-    // モック自体が即座に解決することと、追加のメッセージ往復が発生しないことで確認する
-    const sendMessage = vi.fn().mockResolvedValue({ accepted: true })
+  it('受付応答はsendMessageの解決をそのまま返す（X側への保存完了を別途待たない）', async () => {
+    // sendMessageの解決＝「検証・キュー投入が済んだ」という受付のみを表す。
+    // Xへの保存完了は別途待たない設計であることを、応答が来るまでは返らず、
+    // 解決後はその値がそのまま返りメッセージ往復が1回きりであることで確認する
+    const deferred = createDeferred<EnqueueResult>()
+    const sendMessage = vi.fn().mockReturnValue(deferred.promise)
     vi.stubGlobal('chrome', { runtime: { sendMessage } })
 
-    const start = performance.now()
-    await enqueueMuteKeyword('テスト')
-    const elapsed = performance.now() - start
+    let settled = false
+    const pending = enqueueMuteKeyword('テスト').then((result) => {
+      settled = true
+      return result
+    })
+    await Promise.resolve()
+    expect(settled).toBe(false)
 
-    expect(elapsed).toBeLessThan(100)
+    deferred.resolve({ accepted: true })
+    await expect(pending).resolves.toEqual({ accepted: true })
     expect(sendMessage).toHaveBeenCalledTimes(1)
   })
 })

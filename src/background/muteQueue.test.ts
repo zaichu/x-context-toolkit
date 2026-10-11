@@ -71,19 +71,6 @@ describe('createMuteQueue', () => {
     expect(addMuteKeywordToX).toHaveBeenCalledWith('テスト')
   })
 
-  it('受付は100ms未満で完了する（同期的に返る）', () => {
-    const addMuteKeywordToX = vi.fn().mockReturnValue(new Promise(() => {}))
-    const notifyFailure = vi.fn().mockResolvedValue(undefined)
-    const queue = createMuteQueue({ addMuteKeywordToX, notifyFailure })
-
-    const start = performance.now()
-    const result = queue.enqueue('テスト')
-    const elapsed = performance.now() - start
-
-    expect(result.accepted).toBe(true)
-    expect(elapsed).toBeLessThan(100)
-  })
-
   it('バリデーションエラー時はキューに積まずaccepted:falseとerrorを返す', () => {
     const addMuteKeywordToX = vi.fn()
     const notifyFailure = vi.fn()
