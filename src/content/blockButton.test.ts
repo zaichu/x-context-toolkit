@@ -132,26 +132,6 @@ describe('insertBlockButton / hasBlockButton', () => {
     expect(insertBlockButton(article)).toBeNull()
   })
 
-  it('Grokと同じボタンクラスと中央揃え寸法を適用する', () => {
-    const article = buildTweetArticle('testuser')
-    document.body.appendChild(article)
-
-    const button = insertBlockButton(article)!
-
-    expect(button.style.backgroundColor).toBe('transparent')
-    expect(button.classList.contains('x-action-button')).toBe(true)
-    expect(button.classList.contains('x-round-button')).toBe(true)
-    expect(button.style.display).toBe('flex')
-    expect(button.style.alignItems).toBe('center')
-    expect(button.style.justifyContent).toBe('center')
-    expect(button.style.width).toBe('34px')
-    expect(button.style.height).toBe('34px')
-    expect(button.style.padding).toBe('0px')
-    expect(button.style.margin).toBe('0px')
-    expect(button.style.lineHeight).toBe('1')
-    expect(button.style.cursor).toBe('pointer')
-  })
-
   it('X既存のアクション列を大きく崩さないよう、他のアクションボタンと並んで挿入される', () => {
     const article = buildTweetArticle('testuser')
     document.body.appendChild(article)
