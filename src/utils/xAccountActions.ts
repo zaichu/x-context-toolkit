@@ -37,10 +37,11 @@ const USERNAME_PATTERN = /^[A-Za-z0-9_]{1,15}$/
 const ALLOWED_HOSTS = ['x.com', 'twitter.com', 'www.x.com', 'www.twitter.com']
 
 // プロフィールURLから安全にユーザー名を抽出する。予約パスや不正・曖昧なURLはnullを返す
+// hrefは相対指定で来るためx.com基準で解決する（絶対URLはそのまま解釈される）
 export const extractUsernameFromProfileUrl = (url: string): string | null => {
   let parsed: URL
   try {
-    parsed = new URL(url)
+    parsed = new URL(url, 'https://x.com')
   } catch {
     return null
   }

@@ -8,7 +8,7 @@ import { createMuteQueue, truncateForNotification } from './muteQueue'
 const muteQueue = createMuteQueue({
   addMuteKeywordToX,
   notifyFailure: async (keyword) => {
-    await showNotification(`「${truncateForNotification(keyword)}」の追加に失敗しました`, 'error')
+    await notifyFailure(`「${truncateForNotification(keyword)}」の追加に失敗しました`)
   },
 })
 
@@ -41,7 +41,7 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
   if (info.menuItemId === 'add-mute-keyword' && info.selectionText) {
     const result = muteQueue.enqueue(info.selectionText)
     if (!result.accepted && result.error) {
-      await showNotification(result.error, 'error')
+      await notifyFailure(result.error)
     }
   }
 })
@@ -56,8 +56,8 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     return false
   }
 
-  if (request.action === 'showNotification') {
-    showNotification(request.message, request.type || 'info')
+  if (request.action === 'notifyFailure') {
+    notifyFailure(request.message)
     sendResponse({ success: true })
     return true
   }
@@ -65,16 +65,13 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
   return true
 })
 
-// 通知を表示する関数
-const showNotification = async (message: string, type: 'success' | 'error' | 'info' = 'info') => {
-  const iconUrl = 'icons/icon48.png'
-  const title = type === 'error' ? 'エラー' : 'X Context Toolkit'
-
+// 失敗を拡張機能の通知として表示する
+const notifyFailure = async (message: string) => {
   try {
     await chrome.notifications.create({
       type: 'basic',
-      iconUrl,
-      title,
+      iconUrl: 'icons/icon48.png',
+      title: 'エラー',
       message
     })
   } catch (error) {

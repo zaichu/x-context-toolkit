@@ -35,6 +35,11 @@ describe('extractUsernameFromProfileUrl', () => {
     expect(extractUsernameFromProfileUrl('https://evil.com/testuser')).toBeNull()
   })
 
+  it('相対hrefはx.com基準で解決してユーザー名を抽出する', () => {
+    expect(extractUsernameFromProfileUrl('/testuser')).toBe('testuser')
+    expect(extractUsernameFromProfileUrl('/testuser/status/12345')).toBe('testuser')
+  })
+
   it('不正なURLは拒否する', () => {
     expect(extractUsernameFromProfileUrl('javascript:alert(1)')).toBeNull()
     expect(extractUsernameFromProfileUrl('not a url')).toBeNull()

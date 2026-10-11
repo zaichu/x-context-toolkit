@@ -417,7 +417,7 @@ describe('ブロックボタンのクリック挙動', () => {
 
     expect(wrongMenuClickSpy).not.toHaveBeenCalled()
     expect(sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'showNotification', type: 'error' })
+      expect.objectContaining({ action: 'notifyFailure' })
     )
   })
 
@@ -436,7 +436,7 @@ describe('ブロックボタンのクリック挙動', () => {
     })
 
     expect(sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'showNotification', type: 'error' })
+      expect.objectContaining({ action: 'notifyFailure' })
     )
   })
 
@@ -452,7 +452,7 @@ describe('ブロックボタンのクリック挙動', () => {
     await vi.waitFor(() => expect(button.disabled).toBe(false))
 
     expect(sendMessage).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'showNotification', type: 'error' })
+      expect.objectContaining({ action: 'notifyFailure' })
     )
   })
 
