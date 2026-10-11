@@ -5,6 +5,7 @@ import {
   fillMuteKeywordForm,
   prepareAndFillMuteKeywordForm,
 } from '../utils/xMuteKeywords'
+import type { FillMuteKeywordResponse } from '../utils/xMuteKeywords'
 import { observeTweetArticles } from './blockButton'
 
 console.log('X Context Toolkit コンテンツスクリプトが読み込まれました')
@@ -40,7 +41,7 @@ type FillAction = (typeof FILL_ACTIONS)[keyof typeof FILL_ACTIONS]
 const respondFillKeyword = async (
   keyword: string,
   action: FillAction,
-  sendResponse: (response: unknown) => void,
+  sendResponse: (response: FillMuteKeywordResponse) => void,
 ): Promise<void> => {
   try {
     if (!action.isTargetPage()) {
