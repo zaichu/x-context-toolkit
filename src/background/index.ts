@@ -47,7 +47,7 @@ chrome.contextMenus.onClicked.addListener(async (info) => {
 })
 
 // Popupおよびコンテンツスクリプトからのメッセージ(action)を処理
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
   console.log('バックグラウンドでメッセージを受信:', request)
 
   if (request.action === 'enqueueMuteKeyword') {

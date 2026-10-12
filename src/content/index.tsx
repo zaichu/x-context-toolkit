@@ -69,7 +69,7 @@ const respondFillKeyword = async (
 }
 
 // バックグラウンドスクリプトからのメッセージを受信
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
   console.log('コンテンツスクリプトでメッセージを受信:', request)
 
   const action = FILL_ACTIONS[request.action as keyof typeof FILL_ACTIONS]
