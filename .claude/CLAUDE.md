@@ -22,7 +22,7 @@ src/
 │   └── blockButton.ts       # 🚫ブロックボタンの挿入・ブロック操作
 ├── popup/                   # ポップアップUI
 │   ├── index.html           # HTMLテンプレート
-│   ├── popup.tsx            # エントリーポイント
+│   ├── main.tsx             # エントリーポイント
 │   ├── Popup.tsx            # Reactコンポーネント
 │   └── enqueueMuteKeyword.ts
 └── utils/                   # ユーティリティ関数
