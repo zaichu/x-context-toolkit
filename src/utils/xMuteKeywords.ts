@@ -30,8 +30,6 @@ export interface FillMuteKeywordResponse {
   // 保存を要求したが完了の兆候を確認できなかった場合のみtrue。
   // 保存自体は成功している可能性があるため、フォーム処理の失敗とは区別する
   unconfirmed?: boolean
-  // content側が付ける補足メッセージ。送信側はfillFailureMessageで文言を分けているため参照していない
-  error?: string
   timings?: SaveTimings
 }
 

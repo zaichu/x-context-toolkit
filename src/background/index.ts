@@ -78,6 +78,3 @@ const notifyFailure = async (message: string) => {
     console.error('通知の表示に失敗:', error)
   }
 }
-
-// エクスポート（TypeScriptでの型チェック用）
-export { }
