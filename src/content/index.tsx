@@ -25,12 +25,10 @@ const initialize = () => {
 const FILL_ACTIONS = {
   fillMuteKeyword: {
     isTargetPage: isMuteKeywordPage,
-    wrongPageError: 'ミュートキーワード設定ページではありません',
     fill: fillMuteKeywordForm,
   },
   prepareAndFillMuteKeyword: {
     isTargetPage: isMuteKeywordsListPage,
-    wrongPageError: 'ミュートキーワード一覧ページではありません',
     // 追加リンクをクリックしてSPA遷移させてからフォームにキーワードを入力
     fill: prepareAndFillMuteKeywordForm,
   },
@@ -45,7 +43,7 @@ const respondFillKeyword = async (
 ): Promise<void> => {
   try {
     if (!action.isTargetPage()) {
-      sendResponse({ success: false, error: action.wrongPageError })
+      sendResponse({ success: false })
       return
     }
 
@@ -59,12 +57,11 @@ const respondFillKeyword = async (
         success: false,
         unconfirmed: result.unconfirmed,
         timings: result.timings,
-        error: result.unconfirmed ? '保存の完了を確認できませんでした' : 'フォームの入力に失敗しました',
       })
     }
   } catch (error) {
     console.error('ミュートキーワード入力エラー:', error)
-    sendResponse({ success: false, error: error instanceof Error ? error.message : '不明なエラー' })
+    sendResponse({ success: false })
   }
 }
 
@@ -74,7 +71,7 @@ chrome.runtime.onMessage.addListener((request, _sender, sendResponse) => {
 
   const action = FILL_ACTIONS[request.action as keyof typeof FILL_ACTIONS]
   if (!action || !request.keyword) {
-    sendResponse({ success: false, error: '不明なアクション' })
+    sendResponse({ success: false })
     return true
   }
 
@@ -90,6 +87,3 @@ if (document.readyState === 'loading') {
 } else {
   initialize()
 }
-
-// エクスポート（TypeScriptでの型チェック用）
-export { }
