@@ -110,6 +110,8 @@ export const findBlockMenuItem = (username: string): HTMLElement | null => {
 }
 
 // ブロック確認ダイアログの確定ボタンを検索する
+// testid → ダイアログ内の文言 → 位置指定の絶対XPathの順に探す。
+// XPathはXの配置変更で別ボタンを指しうるため最後の手段にする
 export const findBlockConfirmButton = (): HTMLButtonElement | null => {
   const testIdButton = document.querySelector<HTMLButtonElement>(
     '[data-testid="confirmationSheetConfirm"]'
@@ -118,7 +120,20 @@ export const findBlockConfirmButton = (): HTMLButtonElement | null => {
     return testIdButton
   }
 
-  // Xの確認シートがラベルを持たない場合は、実DOMの確定ボタンを取得する
+  const dialog = document.querySelector('[role="alertdialog"], [role="dialog"]')
+  if (dialog) {
+    const buttons = dialog.querySelectorAll<HTMLButtonElement>('button')
+    for (const button of buttons) {
+      const text = (button.textContent ?? '').toLowerCase()
+      if (isUndoActionLabel(text)) {
+        continue
+      }
+      if ((text.includes('block') || text.includes('ブロック')) && !button.disabled) {
+        return button
+      }
+    }
+  }
+
   const xConfirmButton = document.evaluate(
     '//*[@id="layers"]/div[2]/div/div/div/div/div/div[2]/div[2]/div[2]/button[1]',
     document,
@@ -128,22 +143,6 @@ export const findBlockConfirmButton = (): HTMLButtonElement | null => {
   ).singleNodeValue
   if (xConfirmButton instanceof HTMLButtonElement && !xConfirmButton.disabled) {
     return xConfirmButton
-  }
-
-  const dialog = document.querySelector('[role="alertdialog"], [role="dialog"]')
-  if (!dialog) {
-    return null
-  }
-
-  const buttons = dialog.querySelectorAll<HTMLButtonElement>('button')
-  for (const button of buttons) {
-    const text = (button.textContent ?? '').toLowerCase()
-    if (isUndoActionLabel(text)) {
-      continue
-    }
-    if ((text.includes('block') || text.includes('ブロック')) && !button.disabled) {
-      return button
-    }
   }
 
   return null

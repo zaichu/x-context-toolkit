@@ -163,4 +163,82 @@ describe('findBlockConfirmButton', () => {
     document.body.innerHTML = ''
     expect(findBlockConfirmButton()).toBeNull()
   })
+
+  it('testid・文言・XPathが共存する場合はtestidを優先する', () => {
+    document.body.innerHTML = `
+      <div id="layers">
+        <div></div>
+        <div><div><div><div><div><div>
+          <div></div>
+          <div>
+            <div></div>
+            <div>
+              <div></div>
+              <div><button id="xpath-confirm"></button><button>cancel</button></div>
+            </div>
+          </div>
+        </div></div></div></div></div></div>
+      </div>
+      <div role="alertdialog">
+        <button id="text-confirm">Block</button>
+      </div>
+      <button id="testid-confirm" data-testid="confirmationSheetConfirm">Block</button>
+    `
+    expect(findBlockConfirmButton()?.id).toBe('testid-confirm')
+  })
+
+  it('testidが無効な場合はダイアログ内の文言ボタンをXPathより優先する', () => {
+    document.body.innerHTML = `
+      <div id="layers">
+        <div></div>
+        <div><div><div><div><div><div>
+          <div></div>
+          <div>
+            <div></div>
+            <div>
+              <div></div>
+              <div><button id="xpath-confirm"></button><button>cancel</button></div>
+            </div>
+          </div>
+        </div></div></div></div></div></div>
+      </div>
+      <div role="alertdialog">
+        <button id="text-confirm">Block</button>
+      </div>
+      <button id="testid-confirm" data-testid="confirmationSheetConfirm" disabled>Block</button>
+    `
+    expect(findBlockConfirmButton()?.id).toBe('text-confirm')
+  })
+
+  it('解除ラベルのボタンは選ばず通常のブロックボタンを選ぶ', () => {
+    document.body.innerHTML = `
+      <div role="alertdialog">
+        <button>Unblock</button>
+        <button id="text-confirm">Block</button>
+      </div>
+    `
+    expect(findBlockConfirmButton()?.id).toBe('text-confirm')
+  })
+
+  it('文言ボタンが無い場合のみXPathを最後の手段として使う', () => {
+    document.body.innerHTML = `
+      <div id="layers">
+        <div></div>
+        <div><div><div><div><div><div>
+          <div></div>
+          <div>
+            <div></div>
+            <div>
+              <div></div>
+              <div><button id="xpath-confirm"></button><button>cancel</button></div>
+            </div>
+          </div>
+        </div></div></div></div></div></div>
+      </div>
+      <div role="alertdialog">
+        <button>Cancel</button>
+      </div>
+    `
+    expect(findBlockConfirmButton()?.id).toBe('xpath-confirm')
+  })
 })

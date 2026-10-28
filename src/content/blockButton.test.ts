@@ -456,6 +456,44 @@ describe('ブロックボタンのクリック挙動', () => {
     )
   })
 
+  it('確認ボタンのクリック後にシートが閉じない場合は再操作可能に戻し通知する', async () => {
+    const sendMessage = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('chrome', { runtime: { sendMessage } })
+
+    const article = buildTweetArticle('testuser')
+    document.body.appendChild(article)
+    const button = insertBlockButton(article)!
+
+    const caretButton = article.querySelector('[data-testid="caret"]') as HTMLButtonElement
+    caretButton.addEventListener('click', () => {
+      const menuItem = document.createElement('div')
+      menuItem.setAttribute('role', 'menuitem')
+      menuItem.textContent = 'Block @testuser'
+      document.body.appendChild(menuItem)
+
+      const dialog = document.createElement('div')
+      dialog.setAttribute('role', 'alertdialog')
+      const confirmButton = document.createElement('button')
+      confirmButton.setAttribute('data-testid', 'confirmationSheetConfirm')
+      confirmButton.textContent = 'Block'
+      dialog.appendChild(confirmButton)
+      menuItem.addEventListener('click', () => {
+        document.body.appendChild(dialog)
+      })
+    })
+
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await vi.waitFor(
+      () => expect(button.disabled).toBe(false),
+      { timeout: 5000 },
+    )
+
+    expect(button.textContent).toBe('🚫')
+    expect(sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'notifyFailure' })
+    )
+  })
+
   it('自分自身の投稿では操作しない', async () => {
     const sendMessage = vi.fn().mockResolvedValue(undefined)
     vi.stubGlobal('chrome', { runtime: { sendMessage } })
