@@ -535,6 +535,54 @@ describe('ブロックボタンのクリック挙動', () => {
     )
   })
 
+  it('確認ボタンがdisabledな別ボタンへ置き換わってもシートが残れば成功にしない', async () => {
+    const sendMessage = vi.fn().mockResolvedValue(undefined)
+    vi.stubGlobal('chrome', { runtime: { sendMessage } })
+
+    const article = buildTweetArticle('testuser')
+    document.body.appendChild(article)
+    const button = insertBlockButton(article)!
+
+    const caretButton = article.querySelector('[data-testid="caret"]') as HTMLButtonElement
+    caretButton.addEventListener('click', () => {
+      const menuItem = document.createElement('div')
+      menuItem.setAttribute('role', 'menuitem')
+      menuItem.textContent = 'Block @testuser'
+      document.body.appendChild(menuItem)
+
+      const dialog = document.createElement('div')
+      dialog.setAttribute('role', 'alertdialog')
+      const confirmButton = document.createElement('button')
+      confirmButton.setAttribute('data-testid', 'confirmationSheetConfirm')
+      confirmButton.textContent = 'Block'
+      dialog.appendChild(confirmButton)
+      menuItem.addEventListener('click', () => {
+        document.body.appendChild(dialog)
+      })
+      confirmButton.addEventListener('click', () => {
+        confirmButton.remove()
+        const replacement = document.createElement('button')
+        replacement.textContent = 'Block'
+        replacement.disabled = true
+        dialog.appendChild(replacement)
+        const error = document.createElement('div')
+        error.textContent = '通信に失敗しました'
+        dialog.appendChild(error)
+      })
+    })
+
+    button.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }))
+    await vi.waitFor(
+      () => expect(button.disabled).toBe(false),
+      { timeout: 5000 },
+    )
+
+    expect(button.textContent).toBe('🚫')
+    expect(sendMessage).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'notifyFailure' })
+    )
+  })
+
   it('自分自身の投稿では操作しない', async () => {
     const sendMessage = vi.fn().mockResolvedValue(undefined)
     vi.stubGlobal('chrome', { runtime: { sendMessage } })

@@ -95,10 +95,11 @@ const blockTweetAuthor = async (article: HTMLElement, username: string): Promise
         resolve(false)
         return
       }
-      confirmButton.dispatchEvent(createClickEvent())
       // 成功の判定はボタンの有無ではなくシート自体の閉鎖で見る。
-      // 送信中のdisabled化やボタンの差し替えではシートが残るため成功にしない
+      // 送信中のdisabled化やボタンの差し替えではシートが残るため成功にしない。
+      // 参照はクリック前に取得する（クリックでボタンが置き換えられると親を失うため）
       const sheetAtClick = confirmButton.closest('[role="alertdialog"], [role="dialog"]')
+      confirmButton.dispatchEvent(createClickEvent())
       void waitForCondition<true>(
         () => {
           if (sheetAtClick) {
