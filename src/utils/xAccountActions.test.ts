@@ -73,6 +73,20 @@ describe('findBlockMenuItem', () => {
     expect(findBlockMenuItem('testuser')?.dataset.testid).toBe('block')
   })
 
+  it('data-testid付きでも解除ラベルの項目は返さない', () => {
+    document.body.innerHTML =
+      '<div role="menuitem" data-testid="block">@testuser のブロックを解除</div>'
+    expect(findBlockMenuItem('testuser')).toBeNull()
+  })
+
+  it('data-testid付き解除項目があっても文言経路の正規項目に進む', () => {
+    document.body.innerHTML = `
+      <div role="menuitem" data-testid="block">Unblock @testuser</div>
+      <div role="menuitem">Block @testuser</div>
+    `
+    expect(findBlockMenuItem('testuser')?.textContent).toBe('Block @testuser')
+  })
+
   it('日本語表記の項目も対象にする', () => {
     document.body.innerHTML = `
       <div role="menuitem">@testuser をブロック</div>
