@@ -1,6 +1,7 @@
 // Xの各ポストに常設する🚫ブロックボタンの機能
 // 現在ページ内のX公式DOMだけを操作し、別タブ・別ウィンドウは一切開かない。
 import { extractUsernameFromProfileUrl, findBlockMenuItem, findBlockConfirmButton } from '../utils/xAccountActions'
+import { waitForCondition } from '../utils/waitForCondition'
 
 const TWEET_SELECTOR = 'article[data-testid="tweet"]'
 const BLOCK_BUTTON_CLASS = 'block-button'
@@ -62,6 +63,10 @@ const createClickEvent = (): MouseEvent => new MouseEvent('click', {
   cancelable: true,
 })
 
+// 確認クリック後にシートが閉じたことを確かめる上限
+const CONFIRM_CLOSE_TIMEOUT_MS = 2_000
+const CONFIRM_CLOSE_POLL_MS = 50
+
 // このポストの投稿者をX公式DOM経由でブロックする（別タブ・別ウィンドウは開かない）
 const blockTweetAuthor = async (article: HTMLElement, username: string): Promise<boolean> => {
   const caretButton = findTweetCaretButton(article)
@@ -90,8 +95,30 @@ const blockTweetAuthor = async (article: HTMLElement, username: string): Promise
         resolve(false)
         return
       }
+      // 成功の判定はボタンの有無ではなくシート自体の閉鎖で見る。
+      // 送信中のdisabled化やボタンの差し替えではシートが残るため成功にしない。
+      // 参照はクリック前に取得する（クリックでボタンが置き換えられると親を失うため）
+      const sheetAtClick = confirmButton.closest('[role="alertdialog"], [role="dialog"]')
       confirmButton.dispatchEvent(createClickEvent())
-      resolve(true)
+      void waitForCondition<true>(
+        () => {
+          if (sheetAtClick) {
+            return !sheetAtClick.isConnected ? true : undefined
+          }
+          return !confirmButton.isConnected && findBlockConfirmButton() === null
+            ? true
+            : undefined
+        },
+        {
+          timeoutMs: CONFIRM_CLOSE_TIMEOUT_MS,
+          pollIntervalMs: CONFIRM_CLOSE_POLL_MS,
+          observeTarget: document,
+          observeOptions: { childList: true, subtree: true },
+        },
+      ).then(
+        (closed) => resolve(closed === true),
+        () => resolve(false),
+      )
     })
   })
 }
