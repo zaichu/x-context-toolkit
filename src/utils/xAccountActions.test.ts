@@ -87,6 +87,16 @@ describe('findBlockMenuItem', () => {
     expect(findBlockMenuItem('testuser')?.textContent).toBe('Block @testuser')
   })
 
+  it('ユーザー名にunblockを含む正常な項目はtestid経路で返す', () => {
+    document.body.innerHTML =
+      '<div role="menuitem" data-testid="block">Block @unblockme</div>'
+    expect(findBlockMenuItem('unblockme')?.dataset.testid).toBe('block')
+
+    document.body.innerHTML =
+      '<div role="menuitem" data-testid="block">Block @UNBLOCK_USER</div>'
+    expect(findBlockMenuItem('UNBLOCK_USER')?.dataset.testid).toBe('block')
+  })
+
   it('日本語表記の項目も対象にする', () => {
     document.body.innerHTML = `
       <div role="menuitem">@testuser をブロック</div>
