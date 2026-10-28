@@ -96,11 +96,18 @@ const blockTweetAuthor = async (article: HTMLElement, username: string): Promise
         return
       }
       confirmButton.dispatchEvent(createClickEvent())
+      // 成功の判定はボタンの有無ではなくシート自体の閉鎖で見る。
+      // 送信中のdisabled化やボタンの差し替えではシートが残るため成功にしない
+      const sheetAtClick = confirmButton.closest('[role="alertdialog"], [role="dialog"]')
       void waitForCondition<true>(
-        () =>
-          !confirmButton.isConnected || findBlockConfirmButton() === null
+        () => {
+          if (sheetAtClick) {
+            return !sheetAtClick.isConnected ? true : undefined
+          }
+          return !confirmButton.isConnected && findBlockConfirmButton() === null
             ? true
-            : undefined,
+            : undefined
+        },
         {
           timeoutMs: CONFIRM_CLOSE_TIMEOUT_MS,
           pollIntervalMs: CONFIRM_CLOSE_POLL_MS,
